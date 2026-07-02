@@ -22,6 +22,14 @@ enum ProbeRunner {
             semaphore.wait()
             exit(0)
         }
+        if args.contains("--probe-mics") {
+            let def = AudioInputDevices.defaultInput()
+            print("default input: \(def?.name ?? "none") [\(def?.uid ?? "-")]")
+            for d in AudioInputDevices.list() {
+                print("device: \(d.name) | uid: \(d.uid) | channels: \(d.inputChannels)")
+            }
+            exit(0)
+        }
         if let flagIndex = args.firstIndex(of: "--probe-dual") {
             guard args.count > flagIndex + 2 else {
                 print("usage: RadioOperator --probe-dual <file1> <file2>")

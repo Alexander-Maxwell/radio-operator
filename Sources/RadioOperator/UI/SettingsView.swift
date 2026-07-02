@@ -7,6 +7,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            microphoneSection
             hotkeySection
             cleanupSection
             dictionarySection
@@ -18,6 +19,53 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(minWidth: 540, minHeight: 560)
         .onAppear { apiKeyDraft = settings.apiKey ?? "" }
+    }
+
+    // MARK: - Microphone
+
+    @State private var inputDevices: [AudioInputDevices.Device] = []
+
+    private var microphoneSection: some View {
+        Section {
+            HStack {
+                Picker("Input device", selection: Binding(
+                    get: { settings.data.micDeviceUID ?? "" },
+                    set: { newValue in
+                        settings.data.micDeviceUID = newValue.isEmpty ? nil : newValue
+                        MicCapture.shared.preferredDeviceUID = settings.data.micDeviceUID
+                    }
+                )) {
+                    Text("System default\(defaultInputName.map { " (\($0))" } ?? "")").tag("")
+                    ForEach(inputDevices) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                }
+                Button {
+                    inputDevices = AudioInputDevices.list()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("Rescan input devices")
+            }
+            if let uid = settings.data.micDeviceUID, AudioInputDevices.device(forUID: uid) == nil {
+                Label("This microphone isn't connected right now — the system default will be used until it returns.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        } header: {
+            Text("Microphone")
+        } footer: {
+            Text("Used for dictation and the \"Me\" side of meetings. Takes effect immediately, even mid-recording.")
+        }
+        .onAppear {
+            inputDevices = AudioInputDevices.list()
+        }
+    }
+
+    private var defaultInputName: String? {
+        AudioInputDevices.defaultInput()?.name
     }
 
     // MARK: - Hotkey

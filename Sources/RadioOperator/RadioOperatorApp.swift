@@ -38,6 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         DictationController.shared.startListening()
 
+        // Route capture to the user's chosen microphone (nil = system default).
+        MicCapture.shared.preferredDeviceUID = SettingsStore.shared.data.micDeviceUID
+
         // Pre-warm the speech format query so the first hotkey press is fast.
         Task.detached { _ = await Transcriber.preferredFormat() }
 

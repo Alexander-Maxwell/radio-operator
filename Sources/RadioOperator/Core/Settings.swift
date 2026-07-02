@@ -81,6 +81,8 @@ struct SettingsData: Codable, Sendable {
     var smartLeadingSpace: Bool = true
     var hasCompletedOnboarding: Bool = false
     var echoGuard: Bool = false
+    /// Persistent UID of the preferred input device; nil = system default.
+    var micDeviceUID: String? = nil
 
     static var defaultNotesFolder: String {
         FileManager.default.homeDirectoryForCurrentUser
@@ -94,7 +96,7 @@ struct SettingsData: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case holdHotkey, cleanupLevel, dictionary, snippets, notesFolderPath
         case retainAudio, claudeMode, claudeCLIModel, apiModel
-        case smartLeadingSpace, hasCompletedOnboarding, echoGuard
+        case smartLeadingSpace, hasCompletedOnboarding, echoGuard, micDeviceUID
     }
 
     init(from decoder: Decoder) throws {
@@ -112,6 +114,7 @@ struct SettingsData: Codable, Sendable {
         smartLeadingSpace = (try? c.decodeIfPresent(Bool.self, forKey: .smartLeadingSpace)) ?? d.smartLeadingSpace
         hasCompletedOnboarding = (try? c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)) ?? d.hasCompletedOnboarding
         echoGuard = (try? c.decodeIfPresent(Bool.self, forKey: .echoGuard)) ?? d.echoGuard
+        micDeviceUID = (try? c.decodeIfPresent(String.self, forKey: .micDeviceUID)) ?? d.micDeviceUID
     }
 }
 

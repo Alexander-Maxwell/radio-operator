@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AudioToolbox
 
 /// Microphone capture as a ref-counted broadcaster: one AVAudioEngine input
 /// tap fanned out to any number of subscribers (dictation + meeting can run
@@ -14,19 +15,41 @@ final class MicCapture: @unchecked Sendable {
         let onLevel: (@Sendable (Float) -> Void)?
     }
 
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let lock = NSLock()
     private var subscribers: [UUID: Subscriber] = [:]
     private var converter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
     private(set) var lastBufferAt: Date?
     private var configObserver: NSObjectProtocol?
+    private var _preferredDeviceUID: String?
 
     private init() {}
 
+    /// UID of the input device to capture from (nil = system default).
+    /// Changing it while capturing rebuilds the engine on the new device;
+    /// subscribers keep receiving buffers uninterrupted.
+    var preferredDeviceUID: String? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _preferredDeviceUID
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            guard _preferredDeviceUID != newValue else { return }
+            _preferredDeviceUID = newValue
+            if !subscribers.isEmpty {
+                stopEngineLocked(clearFormat: false)
+                try? startEngineLocked()
+            }
+        }
+    }
+
     /// Subscribe for converted buffers in `format`. First subscriber starts the
     /// engine. All subscribers must request the same format (the SpeechAnalyzer
-    /// preferred format) — enforced by assertion.
+    /// preferred format).
     func subscribe(format: AVAudioFormat,
                    onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void,
                    onLevel: (@Sendable (Float) -> Void)? = nil) throws -> UUID {
@@ -49,13 +72,17 @@ final class MicCapture: @unchecked Sendable {
         defer { lock.unlock() }
         subscribers.removeValue(forKey: id)
         if subscribers.isEmpty {
-            stopEngineLocked()
+            stopEngineLocked(clearFormat: true)
         }
     }
 
     private func startEngineLocked() throws {
         guard let outputFormat else { return }
+        // Fresh engine every start: retargeting a reused engine's input
+        // device is unreliable.
+        engine = AVAudioEngine()
         let input = engine.inputNode
+        applyPreferredDeviceLocked(to: input)
         let inFormat = input.inputFormat(forBus: 0)
         guard inFormat.sampleRate > 0 else {
             subscribers.removeAll()
@@ -79,7 +106,32 @@ final class MicCapture: @unchecked Sendable {
         }
     }
 
-    private func stopEngineLocked() {
+    /// Routes the engine's input to the user-chosen device. Falls back to the
+    /// system default (loudly, in the log) when the device is missing.
+    private func applyPreferredDeviceLocked(to input: AVAudioInputNode) {
+        guard let uid = _preferredDeviceUID else { return }
+        guard let device = AudioInputDevices.device(forUID: uid) else {
+            NSLog("MicCapture: preferred mic \(uid) not found — using system default")
+            return
+        }
+        guard let audioUnit = input.audioUnit else {
+            NSLog("MicCapture: no audioUnit on input node — using system default")
+            return
+        }
+        var deviceID = device.id
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &deviceID,
+            UInt32(MemoryLayout<AudioDeviceID>.size))
+        if status != noErr {
+            NSLog("MicCapture: failed to select mic \(device.name) (\(status)) — using system default")
+        }
+    }
+
+    private func stopEngineLocked(clearFormat: Bool) {
         if let configObserver {
             NotificationCenter.default.removeObserver(configObserver)
             self.configObserver = nil
@@ -87,7 +139,9 @@ final class MicCapture: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         converter = nil
-        outputFormat = nil
+        if clearFormat {
+            outputFormat = nil
+        }
         lastBufferAt = nil
     }
 

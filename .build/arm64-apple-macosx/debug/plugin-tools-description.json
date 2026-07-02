@@ -24,6 +24,10 @@
       "inputs" : [
         {
           "kind" : "file",
+          "name" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/AudioInputDevices.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/AudioRecorder.swift"
         },
         {
@@ -151,6 +155,7 @@
       "moduleName" : "RadioOperator",
       "moduleOutputPath" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/Modules/RadioOperator.swiftmodule",
       "objects" : [
+        "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/AudioInputDevices.swift.o",
         "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/AudioRecorder.swift.o",
         "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/MicCapture.swift.o",
         "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/SystemAudioTap.swift.o",
@@ -226,6 +231,10 @@
       ],
       "outputFileMapPath" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/output-file-map.json",
       "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/AudioInputDevices.swift.o"
+        },
         {
           "kind" : "file",
           "name" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/AudioRecorder.swift.o"
@@ -349,6 +358,7 @@
       ],
       "prepareForIndexing" : false,
       "sources" : [
+        "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/AudioInputDevices.swift",
         "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/AudioRecorder.swift",
         "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/MicCapture.swift",
         "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/SystemAudioTap.swift",
@@ -394,6 +404,7 @@
       "-package-name",
       "radio_operator",
       "-c",
+      "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/AudioInputDevices.swift",
       "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/AudioRecorder.swift",
       "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/MicCapture.swift",
       "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/SystemAudioTap.swift",
@@ -507,6 +518,10 @@
         {
           "kind" : "virtual",
           "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/Sources/RadioOperator/Audio/AudioInputDevices.swift"
         },
         {
           "kind" : "file",
@@ -641,6 +656,10 @@
         {
           "kind" : "file",
           "name" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/AskView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/maxwellhouse/Desktop/War-Room/radio-operator/.build/arm64-apple-macosx/debug/RadioOperator.build/AudioInputDevices.swift.o"
         },
         {
           "kind" : "file",
