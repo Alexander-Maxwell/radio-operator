@@ -12,4 +12,6 @@ enum Palette {
     static let lcd = Color(red: 0.792, green: 0.635, blue: 0.290)      // #CAA24A
     /// Live microphone — recording/transmit.
     static let live = Color(red: 0.710, green: 0.251, blue: 0.220)     // #B54038
+    /// OD green — the hold-to-dictate mic-level signal (the pill you see while speaking).
+    static let od = Color(red: 0.435, green: 0.514, blue: 0.267)       // #6F8344
 }
