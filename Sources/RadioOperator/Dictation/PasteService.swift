@@ -48,7 +48,7 @@ final class PasteService {
 
     private func performPaste(_ text: String, target: Target) async -> Outcome {
         let pb = NSPasteboard.general
-        let saved = savePasteboard(pb)
+        let saved = PasteService.snapshot(pb)
         pb.clearContents()
         pb.setString(text, forType: .string)
         pb.setString("1", forType: PasteService.concealedType)
@@ -129,8 +129,9 @@ final class PasteService {
     }
 
     /// Snapshot every item/type currently on the pasteboard so images, RTF,
-    /// and files survive the swap.
-    private func savePasteboard(_ pb: NSPasteboard) -> [NSPasteboardItem] {
+    /// and files survive the swap. Static + nonisolated so the clipboard
+    /// save/restore round-trip is unit-testable against a scratch pasteboard.
+    nonisolated static func snapshot(_ pb: NSPasteboard) -> [NSPasteboardItem] {
         (pb.pasteboardItems ?? []).map { item in
             let copy = NSPasteboardItem()
             for type in item.types {

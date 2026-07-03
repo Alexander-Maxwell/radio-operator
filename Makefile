@@ -1,4 +1,4 @@
-.PHONY: build test probe app run install clean reset-tcc
+.PHONY: build test probe probe-ask app run install clean reset-tcc
 
 build:
 	swift build
@@ -8,6 +8,11 @@ test: build
 
 probe: build
 	@echo "usage: .build/debug/RadioOperator --probe-transcribe <audiofile>"
+
+# End-to-end Ask round-trip against a seeded note. Needs this session's Claude
+# auth (subscription or API key); not part of `make test`.
+probe-ask: build
+	.build/debug/RadioOperator --probe-ask
 
 app:
 	bash scripts/bundle.sh

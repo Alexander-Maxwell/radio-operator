@@ -47,7 +47,60 @@ enum ProbeRunner {
             semaphore.wait()
             exit(0)
         }
+        if args.contains("--probe-ask") {
+            let semaphore = DispatchSemaphore(value: 0)
+            Task {
+                await probeAsk()
+                semaphore.signal()
+            }
+            semaphore.wait()
+            exit(0)
+        }
         return false
+    }
+
+    /// Exercises the full Ask round-trip: seeds a throwaway meeting note, runs
+    /// ClaudeService.ask against it via the real CLI/API path, and asserts a
+    /// non-empty answer. Requires this machine's Claude auth (subscription or
+    /// API key). Prints PROBE-RESULT PASS/FAIL. NOT part of `--run-tests`
+    /// (needs network + auth + is slow).
+    static func probeAsk() async {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("ro-probe-ask-\(UUID().uuidString)")
+        let meetings = root.appendingPathComponent("Meetings")
+        try? fm.createDirectory(at: meetings, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let note = """
+        ---
+        title: SIP Launch Sync
+        date: 2026-07-02T14:00:00Z
+        summary: done
+        tags: [meeting]
+        ---
+        # SIP Launch Sync
+        ## Decisions
+        - White Claw Pineapple PHL launch moved to July 15 to align with the BevMo distributor.
+        ## Action Items
+        - [ ] Confirm the 11 PHL doors with the distributor — Maxwell
+        ## Transcript
+        **Me**: Are we still targeting the 8th for the White Claw launch?
+        **Them**: No, we pushed it to July 15 so the BevMo distributor is ready.
+        """
+        try? note.write(to: meetings.appendingPathComponent("2026-07-02-1400 SIP Launch Sync.md"),
+                        atomically: true, encoding: .utf8)
+
+        let q = "What did we decide about the White Claw launch date, and who owns the follow-up?"
+        print("PROBE-ASK question: \(q)")
+        print("PROBE-ASK notesFolder: \(root.path)")
+        do {
+            let answer = try await ClaudeService.shared.ask(question: q, notesFolder: root, scope: .all)
+            let ok = !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            print("PROBE-ASK answer:\n\(answer)")
+            print("PROBE-RESULT \(ok ? "PASS" : "FAIL") — answer \(ok ? "non-empty" : "EMPTY")")
+        } catch {
+            print("PROBE-ASK error: \(error.localizedDescription)")
+            print("PROBE-RESULT FAIL — ask threw (needs Claude auth/CLI in this session)")
+        }
     }
 
     static func transcribeFile(path: String) async {

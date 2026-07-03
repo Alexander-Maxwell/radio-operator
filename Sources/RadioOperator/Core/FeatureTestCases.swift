@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Tests for the SQLite history store against a throwaway database file.
 enum HistoryStoreTestCases {
@@ -209,6 +210,31 @@ enum MiscFeatureTestCases {
             let d = ClaudeService.cliAskPrompt(question: "find X", history: [], scope: .dictations)
             t.expect(d.contains("dictation logs"), "dictations corpus described")
             t.expect(d.contains("find X"), "question embedded")
+        }
+
+        t.test("paste clipboard save/restore survives the dictation swap") { t in
+            // Scratch pasteboard, isolated from the user's real clipboard.
+            let pb = NSPasteboard(name: NSPasteboard.Name("com.warroom.radiooperator.test-\(UUID().uuidString)"))
+            defer { pb.releaseGlobally() }
+            let custom = NSPasteboard.PasteboardType("com.warroom.test.blob")
+            pb.clearContents()
+            pb.setString("original clipboard", forType: .string)
+            pb.setData(Data("blob".utf8), forType: custom)
+
+            // Snapshot the way PasteService does before it overwrites.
+            let saved = PasteService.snapshot(pb)
+
+            // Simulate the dictation swap.
+            pb.clearContents()
+            pb.setString("dictated text", forType: .string)
+            t.expectEqual(pb.string(forType: .string) ?? "", "dictated text", "swap took")
+
+            // Guarded restore reproduces every original type.
+            pb.clearContents()
+            pb.writeObjects(saved)
+            t.expectEqual(pb.string(forType: .string) ?? "", "original clipboard", "string restored")
+            t.expectEqual(pb.data(forType: custom).flatMap { String(data: $0, encoding: .utf8) } ?? "",
+                          "blob", "non-string type restored")
         }
     }
 }
