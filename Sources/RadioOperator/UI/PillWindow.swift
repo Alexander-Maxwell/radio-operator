@@ -76,37 +76,37 @@ struct PillView: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 10) {
+            HStack(spacing: 9.5) {
                 Image(nsImage: MenuBarIcon.emblem(
-                    color: NSColor(srgbRed: 0.706, green: 0.639, blue: 0.455, alpha: 1), size: 26))
-                    .frame(width: 26, height: 26)
+                    color: NSColor(srgbRed: 0.706, green: 0.639, blue: 0.455, alpha: 1), size: 24.7))
+                    .frame(width: 24.7, height: 24.7)
                 if isError {
-                    HStack(spacing: 7) {
+                    HStack(spacing: 6.5) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(Palette.live)
-                            .font(.system(size: 14))
+                            .font(.system(size: 13))
                         Text(errorMessage)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Palette.bone)
                             .lineLimit(2)
-                            .frame(maxWidth: 290, alignment: .leading)
+                            .frame(maxWidth: 275, alignment: .leading)
                     }
                 } else {
                     Waveform(level: state.micLevel, live: isLive)
                 }
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12.5)
+            .padding(.vertical, 9.5)
             .fixedSize(horizontal: true, vertical: true)
             .background(
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color(red: 0.07, green: 0.068, blue: 0.055))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.55), radius: 12, y: 3)
+            .shadow(color: .black.opacity(0.55), radius: 11.5, y: 3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 2)
@@ -133,23 +133,23 @@ struct Waveform: View {
     ]
 
     var body: some View {
-        HStack(spacing: 2.5) {
+        HStack(spacing: 2.4) {
             ForEach(env.indices, id: \.self) { i in
                 Capsule()
                     .fill(Palette.od)
-                    .frame(width: 2.5, height: barHeight(i))
+                    .frame(width: 2.4, height: barHeight(i))
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)
             }
         }
-        .frame(height: 28)
-        .shadow(color: Palette.od.opacity(0.6), radius: 2.5)
+        .frame(height: 26.5)
+        .shadow(color: Palette.od.opacity(0.6), radius: 2.4)
         .opacity(live ? 1 : 0.5)
     }
 
     private func barHeight(_ i: Int) -> CGFloat {
-        let base: CGFloat = 2.5
+        let base: CGFloat = 2.4
         // Floor keeps a visible wave in silence; level scales it up.
         let lvl = CGFloat(max(0.12, min(1, level)))
-        return base + env[i] * (3.5 + lvl * 19)
+        return base + env[i] * (3.3 + lvl * 18)
     }
 }
