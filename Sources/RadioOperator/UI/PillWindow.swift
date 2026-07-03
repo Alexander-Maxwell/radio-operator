@@ -59,101 +59,96 @@ final class PillController {
 struct PillView: View {
     @EnvironmentObject var state: AppState
 
-    private var statusText: String {
-        switch state.dictationPhase {
-        case .idle: return ""
-        case .recording:
-            return state.dictationLocked ? "Listening — locked, press the hotkey to finish" : "Listening"
-        case .finalizing: return "Finishing…"
-        case .pasting: return "Pasting…"
-        case .error(let message): return message
-        }
-    }
-
     private var isError: Bool {
         if case .error = state.dictationPhase { return true }
         return false
     }
-
-    private var transcriptText: String {
-        let final = state.pillFinal
-        let volatile = state.pillVolatile
-        let joined = [final, volatile].filter { !$0.isEmpty }.joined(separator: " ")
-        return joined
+    private var errorMessage: String {
+        if case .error(let m) = state.dictationPhase { return m }
+        return ""
+    }
+    /// Recording is the fully-live state; finalizing/pasting dim the wave.
+    private var isLive: Bool {
+        if case .recording = state.dictationPhase { return true }
+        return false
     }
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 10) {
+            HStack(spacing: 16) {
+                Image(nsImage: MenuBarIcon.emblem(
+                    color: NSColor(srgbRed: 0.706, green: 0.639, blue: 0.455, alpha: 1), size: 40))
+                    .frame(width: 40, height: 40)
                 if isError {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                } else {
-                    LevelIndicator(level: state.micLevel)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    if !transcriptText.isEmpty {
-                        Text(transcriptText)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color(nsColor: .labelColor))
-                            .lineLimit(3)
-                            .truncationMode(.head)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Palette.live)
+                        Text(errorMessage)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.bone)
+                            .lineLimit(2)
+                            .frame(maxWidth: 320, alignment: .leading)
                     }
-                    Text(statusText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(isError ? AnyShapeStyle(.orange) : AnyShapeStyle(Color(nsColor: .secondaryLabelColor)))
+                } else {
+                    Waveform(level: state.micLevel, live: isLive)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .frame(maxWidth: 540)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
             .fixedSize(horizontal: true, vertical: true)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color(red: 0.07, green: 0.068, blue: 0.055))
             )
-            .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.55), radius: 16, y: 5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 2)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Radio Operator dictation: \(statusText). \(transcriptText)")
+        .accessibilityLabel(isError ? "Radio Operator: \(errorMessage)" : "Radio Operator listening")
     }
 }
 
-/// Animated mic level dots; falls back to a static bar under Reduce Motion.
-struct LevelIndicator: View {
+/// OD-green voice waveform — the whole "on air" indicator. Reactive to mic level,
+/// with a shaped envelope so it reads as a waveform even in silence. Static under
+/// Reduce Motion.
+struct Waveform: View {
     let level: Float
+    var live: Bool = true
 
     private var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
+    // Voice-shaped envelope: tapered ends, busy middle.
+    private let env: [CGFloat] = [
+        0.14, 0.28, 0.46, 0.36, 0.62, 0.90, 0.68, 1.0, 0.82, 0.58, 0.74,
+        0.50, 0.80, 1.0, 0.66, 0.88, 0.60, 0.42, 0.64, 0.40, 0.26, 0.15
+    ]
+
     var body: some View {
-        if reduceMotion {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Palette.od)
-                .frame(width: 20, height: 4 + CGFloat(level) * 10)
-        } else {
-            HStack(spacing: 3) {
-                ForEach(0..<4, id: \.self) { i in
-                    Capsule()
-                        .fill(Palette.od)
-                        .frame(width: 3, height: barHeight(index: i))
-                        .animation(.easeOut(duration: 0.12), value: level)
-                }
+        HStack(spacing: 3) {
+            ForEach(env.indices, id: \.self) { i in
+                Capsule()
+                    .fill(Palette.od)
+                    .frame(width: 3.5, height: barHeight(i))
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: level)
             }
-            .frame(width: 24, height: 20)
         }
+        .frame(height: 44)
+        .shadow(color: Palette.od.opacity(0.6), radius: 3)
+        .opacity(live ? 1 : 0.5)
     }
 
-    private func barHeight(index: Int) -> CGFloat {
-        let base: CGFloat = 5
-        let scaled = CGFloat(level) * 16
-        let variance: [CGFloat] = [0.6, 1.0, 0.8, 0.5]
-        return base + scaled * variance[index]
+    private func barHeight(_ i: Int) -> CGFloat {
+        let base: CGFloat = 4
+        // Floor keeps a visible wave in silence; level scales it up.
+        let lvl = CGFloat(max(0.12, min(1, level)))
+        return base + env[i] * (6 + lvl * 30)
     }
 }

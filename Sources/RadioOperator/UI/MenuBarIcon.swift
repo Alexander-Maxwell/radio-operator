@@ -15,6 +15,16 @@ enum MenuBarIcon {
         return img
     }
 
+    /// The emblem tinted to a fixed color, for in-app surfaces like the dictation
+    /// pill (brass on the dark pill). Not a template — it keeps its own color.
+    static func emblem(color: NSColor, size: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            color.setFill()
+            path(in: rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.06)).fill()
+            return true
+        }
+    }
+
     static func path(in rect: NSRect) -> NSBezierPath {
         func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
             NSPoint(x: rect.minX + x * rect.width, y: rect.minY + (1 - y) * rect.height)
