@@ -135,13 +135,13 @@ struct LevelIndicator: View {
     var body: some View {
         if reduceMotion {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color.accentColor)
+                .fill(Palette.accent)
                 .frame(width: 20, height: 4 + CGFloat(level) * 10)
         } else {
             HStack(spacing: 3) {
                 ForEach(0..<4, id: \.self) { i in
                     Capsule()
-                        .fill(Color.accentColor)
+                        .fill(Palette.accent)
                         .frame(width: 3, height: barHeight(index: i))
                         .animation(.easeOut(duration: 0.12), value: level)
                 }

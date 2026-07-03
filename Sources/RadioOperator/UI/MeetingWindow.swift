@@ -131,7 +131,7 @@ struct MeetingWindowView: View {
             HStack(spacing: 6) {
                 Text(u.speaker == .me ? "Me" : "Them")
                     .font(.caption.bold())
-                    .foregroundStyle(u.speaker == .me ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(u.speaker == .me ? Palette.accent : Color.secondary)
                 Text(u.start, style: .time)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -142,7 +142,7 @@ struct MeetingWindowView: View {
         }
         .padding(10)
         .background(
-            (u.speaker == .me ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.04)),
+            (u.speaker == .me ? Palette.accent.opacity(0.08) : Color.primary.opacity(0.04)),
             in: RoundedRectangle(cornerRadius: 8))
     }
 

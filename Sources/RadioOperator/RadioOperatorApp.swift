@@ -172,23 +172,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Red while capturing is the load-bearing rule: color = live microphone.
+    /// The glyph is the Radio Operator spade-signal mark (vector, template).
     static func icon(for state: AppState) -> NSImage? {
-        let symbol = state.statusSymbol
         let capturing = state.meetingActive || {
             if case .recording = state.dictationPhase { return true }
             return false
         }()
-        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
-        var image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Radio Operator")?
-            .withSymbolConfiguration(config)
-        if capturing {
-            image = image?.withSymbolConfiguration(
-                NSImage.SymbolConfiguration(paletteColors: [.systemRed]))
-            image?.isTemplate = false
-        } else {
-            image?.isTemplate = true
-        }
-        return image
+        return MenuBarIcon.image(capturing: capturing)
     }
 
     // MARK: - Actions

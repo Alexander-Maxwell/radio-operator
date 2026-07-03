@@ -4,8 +4,8 @@ import AppKit
 // MARK: - Palette / sections
 
 private enum RO {
-    /// Signal teal: the one identity accent, used sparingly (selection, preview).
-    static let accent = Color(red: 0.16, green: 0.72, blue: 0.78)
+    /// Weathered brass: the one identity accent, used sparingly (selection, preview).
+    static let accent = Palette.accent
 }
 
 enum HubSection: CaseIterable {
