@@ -190,5 +190,25 @@ enum MiscFeatureTestCases {
             t.expectEqual(back.appearance, .dark, "appearance round-trips")
             t.expectEqual(back.summaryTemplate, "## Custom\n(x)", "template round-trips")
         }
+
+        t.test("ask scope maps to the right folder") { t in
+            let base = URL(fileURLWithPath: "/tmp/notes")
+            t.expectEqual(ClaudeService.scopedFolder(.all, notesFolder: base).path, "/tmp/notes", "all = root")
+            t.expectEqual(ClaudeService.scopedFolder(.meetings, notesFolder: base).lastPathComponent,
+                          "Meetings", "meetings subfolder")
+            t.expectEqual(ClaudeService.scopedFolder(.dictations, notesFolder: base).lastPathComponent,
+                          "Dictations", "dictations subfolder")
+        }
+
+        t.test("ask prompt describes the scoped corpus") { t in
+            let all = ClaudeService.cliAskPrompt(question: "q", history: [], scope: .all)
+            t.expect(all.contains("Meetings/") && all.contains("Dictations/"), "all mentions both folders")
+            let m = ClaudeService.cliAskPrompt(question: "q", history: [], scope: .meetings)
+            t.expect(m.contains("meeting transcripts"), "meetings corpus described")
+            t.expect(!m.contains("Dictations/"), "meetings scope omits the dictations folder")
+            let d = ClaudeService.cliAskPrompt(question: "find X", history: [], scope: .dictations)
+            t.expect(d.contains("dictation logs"), "dictations corpus described")
+            t.expect(d.contains("find X"), "question embedded")
+        }
     }
 }

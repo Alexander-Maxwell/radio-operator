@@ -10,7 +10,7 @@ private enum RO {
 
 enum HubSection: CaseIterable {
     // Console
-    case library, ask
+    case library, ask, dictionary, snippets
     // Settings
     case dictation, meetings, intelligence, privacy, general
 
@@ -18,6 +18,8 @@ enum HubSection: CaseIterable {
         switch self {
         case .library: return "Library"
         case .ask: return "Ask"
+        case .dictionary: return "Dictionary"
+        case .snippets: return "Snippets"
         case .dictation: return "Dictation"
         case .meetings: return "Meetings"
         case .intelligence: return "Intelligence"
@@ -29,6 +31,8 @@ enum HubSection: CaseIterable {
         switch self {
         case .library: return "clock.arrow.circlepath"
         case .ask: return "text.magnifyingglass"
+        case .dictionary: return "character.book.closed"
+        case .snippets: return "text.badge.plus"
         case .dictation: return "waveform"
         case .meetings: return "person.wave.2"
         case .intelligence: return "sparkles"
@@ -119,6 +123,8 @@ struct HubView: View {
 
     @ViewBuilder private var settingsPane: some View {
         switch hub.section {
+        case .dictionary:   DictionaryPane()
+        case .snippets:     SnippetsPane()
         case .dictation:    DictationPane()
         case .meetings:     MeetingsPane()
         case .intelligence: IntelligencePane(health: health)
@@ -133,6 +139,8 @@ struct HubView: View {
             sidebarLabel("CONSOLE")
             SidebarButton(section: .library, selection: $hub.section)
             SidebarButton(section: .ask, selection: $hub.section)
+            SidebarButton(section: .dictionary, selection: $hub.section)
+            SidebarButton(section: .snippets, selection: $hub.section)
             sidebarLabel("SETTINGS").padding(.top, 10)
             SidebarButton(section: .dictation, selection: $hub.section)
             SidebarButton(section: .meetings, selection: $hub.section)
@@ -431,42 +439,6 @@ private struct DictationPane: View {
                 }
             }
             .onAppear { inputDevices = AudioInputDevices.list() }
-
-            Card(title: "Dictionary", hint: "fix names, jargon, brands") {
-                VStack(spacing: 0) {
-                    ForEach($settings.data.dictionary) { $entry in
-                        HStack(spacing: 8) {
-                            TextField("Spoken", text: $entry.spoken)
-                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                            TextField("Written", text: $entry.written)
-                            removeButton { settings.data.dictionary.removeAll { $0.id == entry.id } }
-                        }
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                    }
-                    addButton("Add word") {
-                        settings.data.dictionary.append(DictionaryEntry(spoken: "", written: ""))
-                    }
-                }
-            }
-
-            Card(title: "Snippets", hint: "say a trigger alone to expand it") {
-                VStack(spacing: 0) {
-                    ForEach($settings.data.snippets) { $snippet in
-                        HStack(alignment: .top, spacing: 8) {
-                            TextField("Trigger", text: $snippet.trigger).frame(maxWidth: 150)
-                            Image(systemName: "arrow.right").foregroundStyle(.secondary).padding(.top, 4)
-                            TextField("Expansion", text: $snippet.expansion, axis: .vertical).lineLimit(1...4)
-                            removeButton { settings.data.snippets.removeAll { $0.id == snippet.id } }
-                        }
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                    }
-                    addButton("Add snippet") {
-                        settings.data.snippets.append(Snippet(trigger: "", expansion: ""))
-                    }
-                }
-            }
         }
     }
 
@@ -483,13 +455,86 @@ private struct DictationPane: View {
         Text(s).font(.system(size: 9.5, weight: .semibold, design: .monospaced))
             .tracking(1).foregroundStyle(.tertiary)
     }
-    private func removeButton(_ action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: "trash") }.buttonStyle(.borderless).help("Remove")
+}
+
+// MARK: - Dictionary & Snippets panes (promoted to the Console sidebar)
+
+/// Shared trash button for editable rows.
+private func editRemove(_ action: @escaping () -> Void) -> some View {
+    Button(action: action) { Image(systemName: "trash") }.buttonStyle(.borderless).help("Remove")
+}
+
+/// Shared "add row" button.
+private func editAdd(_ title: String, _ action: @escaping () -> Void) -> some View {
+    Button(action: action) { Label(title, systemImage: "plus") }
+        .buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 8)
+}
+
+private struct DictionaryPane: View {
+    @EnvironmentObject var settings: SettingsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PaneHeader(title: "Dictionary", badge: "SPOKEN → WRITTEN",
+                       sub: "Fix names, jargon, and brands the transcriber gets wrong. At Standard cleanup, each spoken form is rewritten to its written form (longest match first).")
+            Card(title: "Dictionary", hint: "fix names, jargon, brands") {
+                VStack(spacing: 0) {
+                    ForEach($settings.data.dictionary) { $entry in
+                        HStack(spacing: 8) {
+                            TextField("Spoken", text: $entry.spoken)
+                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                            TextField("Written", text: $entry.written)
+                            editRemove { settings.data.dictionary.removeAll { $0.id == entry.id } }
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                    }
+                    if settings.data.dictionary.isEmpty {
+                        emptyHint("No words yet. Add one to correct a term the transcriber misses.")
+                    }
+                    editAdd("Add word") {
+                        settings.data.dictionary.append(DictionaryEntry(spoken: "", written: ""))
+                    }
+                }
+            }
+        }
     }
-    private func addButton(_ title: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { Label(title, systemImage: "plus") }
-            .buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 8)
+}
+
+private struct SnippetsPane: View {
+    @EnvironmentObject var settings: SettingsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PaneHeader(title: "Snippets", badge: "SAY A TRIGGER",
+                       sub: "Say a trigger phrase alone and it expands to the full text — signatures, addresses, canned replies. Whole-utterance match only, so normal dictation is untouched.")
+            Card(title: "Snippets", hint: "trigger → expansion") {
+                VStack(spacing: 0) {
+                    ForEach($settings.data.snippets) { $snippet in
+                        HStack(alignment: .top, spacing: 8) {
+                            TextField("Trigger", text: $snippet.trigger).frame(maxWidth: 150)
+                            Image(systemName: "arrow.right").foregroundStyle(.secondary).padding(.top, 4)
+                            TextField("Expansion", text: $snippet.expansion, axis: .vertical).lineLimit(1...4)
+                            editRemove { settings.data.snippets.removeAll { $0.id == snippet.id } }
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                    }
+                    if settings.data.snippets.isEmpty {
+                        emptyHint("No snippets yet. Add one to expand a spoken trigger into saved text.")
+                    }
+                    editAdd("Add snippet") {
+                        settings.data.snippets.append(Snippet(trigger: "", expansion: ""))
+                    }
+                }
+            }
+        }
     }
+}
+
+private func emptyHint(_ s: String) -> some View {
+    Text(s).font(.system(size: 11.5)).foregroundStyle(.tertiary)
+        .padding(.horizontal, 15).padding(.vertical, 10)
 }
 
 // MARK: - Meetings pane

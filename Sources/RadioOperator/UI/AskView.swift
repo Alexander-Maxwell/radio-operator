@@ -19,6 +19,8 @@ final class AskSession: ObservableObject {
     }
 
     @Published var messages: [Message] = []
+    /// Which slice of the corpus new questions search. Persists with the session.
+    @Published var scope: ClaudeService.AskScope = .all
     var askTask: Task<Void, Never>?
 
     /// Completed (question, answer) pairs for multi-turn context.
@@ -53,6 +55,8 @@ struct AskView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            scopeBar
+            Divider()
             if messages.isEmpty {
                 emptyState
             } else {
@@ -62,6 +66,20 @@ struct AskView: View {
             inputBar
         }
         .frame(minWidth: 460, minHeight: 400)
+    }
+
+    private var scopeBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Search").font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: $session.scope) {
+                ForEach(ClaudeService.AskScope.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 260)
+            Spacer()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
     private var transcript: some View {
@@ -206,7 +224,8 @@ struct AskView: View {
             do {
                 let answer = try await ClaudeService.shared.ask(
                     question: question, history: history,
-                    notesFolder: SettingsStore.shared.notesFolderURL)
+                    notesFolder: SettingsStore.shared.notesFolderURL,
+                    scope: session.scope)
                 guard !Task.isCancelled else { return }
                 replace(pendingID, with: Message(
                     role: .assistant, text: answer, citations: Self.citations(in: answer)))

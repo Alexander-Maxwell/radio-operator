@@ -157,15 +157,47 @@ final class ClaudeService: @unchecked Sendable {
         return String(title.prefix(60))
     }
 
+    /// Which slice of the local corpus an Ask query searches.
+    enum AskScope: String, CaseIterable, Sendable {
+        case all, meetings, dictations
+        var displayName: String {
+            switch self {
+            case .all: return "Everything"
+            case .meetings: return "Meetings"
+            case .dictations: return "Dictations"
+            }
+        }
+    }
+
+    /// The folder a scope searches: the whole notes folder, or its Meetings/ or
+    /// Dictations/ subfolder. Pure, so it is unit-testable.
+    nonisolated static func scopedFolder(_ scope: AskScope, notesFolder: URL) -> URL {
+        switch scope {
+        case .all: return notesFolder
+        case .meetings: return notesFolder.appendingPathComponent("Meetings", isDirectory: true)
+        case .dictations: return notesFolder.appendingPathComponent("Dictations", isDirectory: true)
+        }
+    }
+
     /// Renders the CLI ask prompt, weaving in prior turns so follow-up
-    /// questions ("and the second one?") resolve against the conversation.
-    nonisolated static func cliAskPrompt(question: String, history: [(String, String)]) -> String {
+    /// questions ("and the second one?") resolve against the conversation. The
+    /// corpus description matches the search scope.
+    nonisolated static func cliAskPrompt(question: String, history: [(String, String)],
+                                         scope: AskScope = .all) -> String {
+        let corpus: String
+        switch scope {
+        case .all:
+            corpus = "The current directory contains their notes as markdown (Meetings/ has "
+                + "meeting transcripts with YAML frontmatter; Dictations/ has daily dictation logs)."
+        case .meetings:
+            corpus = "The current directory holds their meeting transcripts as markdown with YAML frontmatter."
+        case .dictations:
+            corpus = "The current directory holds their daily dictation logs as markdown."
+        }
         var p = """
         You are Radio Operator, answering questions about the user's dictation and meeting \
-        notes. The current directory contains their notes as markdown (Meetings/ has \
-        meeting transcripts with YAML frontmatter; Dictations/ has daily dictation logs). \
-        Search them (Grep/Glob/Read) and answer the question concisely. Cite sources like \
-        [filename.md]. If nothing relevant exists, say so plainly.
+        notes. \(corpus) Search them (Grep/Glob/Read) and answer the question concisely. Cite \
+        sources like [filename.md]. If nothing relevant exists, say so plainly.
         """
         if !history.isEmpty {
             p += "\n\nConversation so far (context only — answer just the new question):"
@@ -181,28 +213,38 @@ final class ClaudeService: @unchecked Sendable {
     /// the folder itself (Grep/Read/Glob); API mode falls back to inlining
     /// recent notes and dictations. `history` carries prior (question, answer)
     /// turns so follow-ups resolve.
-    func ask(question: String, history: [(String, String)] = [], notesFolder: URL) async throws -> String {
+    func ask(question: String, history: [(String, String)] = [],
+             notesFolder: URL, scope: AskScope = .all) async throws -> String {
         let mode = await MainActor.run { SettingsStore.shared.data.claudeMode }
         if mode == .cli, cliAvailable {
+            // Scope by pointing the CLI's working directory at the right subfolder;
+            // create it so an empty scope doesn't hand the process a missing cwd.
+            let folder = ClaudeService.scopedFolder(scope, notesFolder: notesFolder)
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             return try await runCLI(
-                prompt: ClaudeService.cliAskPrompt(question: question, history: history),
-                cwd: notesFolder, allowedTools: "Read,Grep,Glob", timeout: 180)
+                prompt: ClaudeService.cliAskPrompt(question: question, history: history, scope: scope),
+                cwd: folder, allowedTools: "Read,Grep,Glob", timeout: 180)
         }
-        // API path: inline the most recent notes and dictations as context.
-        let metas = await MainActor.run { NotesStore.shared.listMeetings() }
+        // API path: inline the most recent notes and dictations as context,
+        // filtered to the chosen scope.
         var context = ""
-        for meta in metas.prefix(12) {
-            if let content = try? String(contentsOf: meta.url, encoding: .utf8) {
-                context += "\n\n===FILE: \(meta.id)===\n\(String(content.prefix(8000)))"
+        if scope != .dictations {
+            let metas = await MainActor.run { NotesStore.shared.listMeetings() }
+            for meta in metas.prefix(12) {
+                if let content = try? String(contentsOf: meta.url, encoding: .utf8) {
+                    context += "\n\n===FILE: \(meta.id)===\n\(String(content.prefix(8000)))"
+                }
             }
         }
-        let dictations = HistoryStore.shared.recent(limit: 50)
-        if !dictations.isEmpty {
-            let tf = DateFormatter()
-            tf.dateFormat = "yyyy-MM-dd HH:mm"
-            context += "\n\n===RECENT DICTATIONS===\n" + dictations
-                .map { "- \(tf.string(from: $0.timestamp)): \($0.cleanedText)" }
-                .joined(separator: "\n")
+        if scope != .meetings {
+            let dictations = HistoryStore.shared.recent(limit: 50)
+            if !dictations.isEmpty {
+                let tf = DateFormatter()
+                tf.dateFormat = "yyyy-MM-dd HH:mm"
+                context += "\n\n===RECENT DICTATIONS===\n" + dictations
+                    .map { "- \(tf.string(from: $0.timestamp)): \($0.cleanedText)" }
+                    .joined(separator: "\n")
+            }
         }
         var convo = ""
         if !history.isEmpty {
