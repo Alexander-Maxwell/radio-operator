@@ -16,10 +16,34 @@ struct MeetingWindowView: View {
             }
             Divider()
             transcript
+            if state.meetingActive || !controller.userNotes.isEmpty {
+                Divider()
+                notesPane
+            }
             Divider()
             footer
         }
         .frame(minWidth: 480, minHeight: 420)
+    }
+
+    /// Jot-and-enhance: rough notes typed here are persisted with the note
+    /// and steer the Claude summary (emphasis, not transcript).
+    private var notesPane: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("My Notes — jotted points steer the summary")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextEditor(text: $controller.userNotes)
+                .font(.body)
+                .frame(minHeight: 56, maxHeight: 110)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(Color.primary.opacity(0.04),
+                            in: RoundedRectangle(cornerRadius: 6))
+                .disabled(!state.meetingActive)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var header: some View {

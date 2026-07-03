@@ -19,6 +19,8 @@ final class AppState: ObservableObject {
     @Published var pillVolatile: String = ""
     @Published var pillFinal: String = ""
     @Published var micLevel: Float = 0
+    /// Hands-free session (double-tap lock): release doesn't stop recording.
+    @Published var dictationLocked: Bool = false
 
     // Meeting
     @Published var meetingActive: Bool = false

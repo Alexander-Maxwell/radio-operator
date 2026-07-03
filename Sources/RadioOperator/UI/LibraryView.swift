@@ -42,13 +42,16 @@ private struct DictationHistoryList: View {
     @State private var records: [DictationRecord] = []
     @State private var selection: DictationRecord.ID?
     @State private var expanded: Set<Int64> = []
+    @State private var query = ""
+    @State private var confirmClear = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("\(records.count) dictations")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                SearchField(query: $query, prompt: "Search dictations…")
                 Spacer()
                 Button {
                     reload()
@@ -56,15 +59,42 @@ private struct DictationHistoryList: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .help("Refresh")
+                Button {
+                    confirmClear = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .help("Clear all dictation history")
+                .disabled(records.isEmpty && query.isEmpty)
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             if records.isEmpty {
-                emptyState
+                if query.isEmpty {
+                    emptyState
+                } else {
+                    noMatches
+                }
             } else {
                 list
             }
         }
         .onAppear(perform: reload)
+        .onChange(of: query) { reload() }
+        .confirmationDialog("Delete all dictation history?",
+                            isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Delete All", role: .destructive) {
+                HistoryStore.shared.deleteAll()
+                reload()
+            }
+        } message: {
+            Text("Removes every saved dictation from this Mac. Meeting notes are not affected.")
+        }
+    }
+
+    private var noMatches: some View {
+        Text("No dictations match \u{201C}\(query)\u{201D}")
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var list: some View {
@@ -118,7 +148,8 @@ private struct DictationHistoryList: View {
     }
 
     private func reload() {
-        records = HistoryStore.shared.recent()
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        records = q.isEmpty ? HistoryStore.shared.recent() : HistoryStore.shared.search(query: q)
     }
 
     private struct DayGroup {
@@ -214,13 +245,17 @@ private struct MeetingLibrary: View {
     @State private var selectedID: MeetingNoteMeta.ID?
     @State private var detailContent: String?
     @State private var inFlight: Set<String> = []
+    @State private var query = ""
+    /// Note contents cached at reload so search doesn't re-read per keystroke.
+    @State private var contentByID: [String: String] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("\(metas.count) meetings")
+            HStack(spacing: 8) {
+                Text("\(filtered.count) meetings")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                SearchField(query: $query, prompt: "Search meetings…")
                 Spacer()
                 Button {
                     reload()
@@ -232,6 +267,10 @@ private struct MeetingLibrary: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             if metas.isEmpty {
                 emptyState
+            } else if filtered.isEmpty {
+                Text("No meetings match \u{201C}\(query)\u{201D}")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HSplitView {
                     list
@@ -245,8 +284,18 @@ private struct MeetingLibrary: View {
         .onChange(of: selectedID) { loadDetail() }
     }
 
+    /// Title or full-text match against the cached note contents.
+    private var filtered: [MeetingNoteMeta] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return metas }
+        return metas.filter { meta in
+            meta.title.localizedCaseInsensitiveContains(q)
+                || (contentByID[meta.id]?.localizedCaseInsensitiveContains(q) ?? false)
+        }
+    }
+
     private var list: some View {
-        List(metas, selection: $selectedID) { meta in
+        List(filtered, selection: $selectedID) { meta in
             row(meta)
         }
     }
@@ -321,6 +370,9 @@ private struct MeetingLibrary: View {
 
     private func reload() {
         metas = NotesStore.shared.listMeetings()
+        contentByID = Dictionary(uniqueKeysWithValues: metas.compactMap { meta in
+            NotesStore.shared.read(noteURL: meta.url).map { (meta.id, $0) }
+        })
         inFlight = Set(metas
             .filter { ClaudeService.shared.isSummaryInFlight(notePath: $0.url.path) }
             .map(\.id))
@@ -355,6 +407,35 @@ private struct MeetingLibrary: View {
         let minutes = seconds / 60
         if minutes < 60 { return "\(minutes) min" }
         return String(format: "%d:%02d", minutes / 60, minutes % 60)
+    }
+}
+
+/// Compact inline search box shared by both Library tabs.
+private struct SearchField: View {
+    @Binding var query: String
+    let prompt: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+            TextField(prompt, text: $query)
+                .textFieldStyle(.plain)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 6).padding(.vertical, 3)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+        .frame(maxWidth: 260)
     }
 }
 

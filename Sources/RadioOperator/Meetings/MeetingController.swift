@@ -22,6 +22,14 @@ final class MeetingController: ObservableObject {
     @Published var banner: String?
     @Published var summaryPhase: SummaryPhase = .none
     @Published var elapsedText: String = "00:00"
+    /// Notes the user jots during the meeting; persisted with the transcript
+    /// and fed to the summary as emphasis signals.
+    @Published var userNotes: String = "" {
+        didSet {
+            guard active, userNotes != oldValue else { return }
+            schedulePersist()
+        }
+    }
 
     private var micTranscriber: Transcriber?
     private var systemTranscriber: Transcriber?
@@ -50,9 +58,11 @@ final class MeetingController: ObservableObject {
         stopping = false
         banner = nil
         summaryPhase = .none
+        userNotes = ""
+        let echoMode = SettingsStore.shared.data.echoGuardMode
         assembler = TranscriptAssembler(
             mergeWindow: 2.0,
-            echoGuard: SettingsStore.shared.data.echoGuard)
+            echoGuard: echoMode.resolved(onSpeakers: false))
         let start = Date()
         startedAt = start
 
@@ -70,9 +80,9 @@ final class MeetingController: ObservableObject {
             title: "Meeting in progress", start: start, durationSeconds: 0,
             utterances: [], degradedMicOnly: false)
 
-        // Speakers → enable echo guard for this session (own voice leaks into
-        // the system tap through the room).
-        if MeetingController.defaultOutputIsBuiltInSpeakers() {
+        // Auto mode enables echo guard when the output is speakers (own voice
+        // leaks into the system tap through the room). On/Off resolved above.
+        if echoMode == .auto, MeetingController.defaultOutputIsBuiltInSpeakers() {
             assembler.echoGuard = true
             banner = "Speakers detected — echo filtering on. Headphones give the cleanest transcript."
         }
@@ -202,7 +212,8 @@ final class MeetingController: ObservableObject {
             durationSeconds: duration,
             summaryMarkdown: NotesStore.summaryPendingMarker,
             utterances: assembler.utterances,
-            degradedMicOnly: AppState.shared.meetingDegradedNoTap)
+            degradedMicOnly: AppState.shared.meetingDegradedNoTap,
+            userNotes: userNotes)
         try? content.write(to: noteURL, atomically: true, encoding: .utf8)
     }
 
@@ -279,6 +290,17 @@ final class MeetingController: ObservableObject {
                     return
                 }
 
+                // Auto-summary is opt-out: when off, the transcript is saved and
+                // the user can summarize later from the Library.
+                if !SettingsStore.shared.data.autoSummarize {
+                    self.summaryPhase = .transcriptSaved
+                    MeetingController.notify(
+                        title: "Transcript saved",
+                        body: "Auto-summary is off — summarize from the Library when ready.")
+                    self.stopInternals()
+                    return
+                }
+
                 // Auto-summary on stop — the moment competitors don't have.
                 self.summaryPhase = .summarizing(startedAt: Date())
                 AppState.shared.summaryInFlight = true
@@ -290,14 +312,15 @@ final class MeetingController: ObservableObject {
                 let fallbackTitle = "Meeting \(df.string(from: startedAt))"
 
                 ClaudeService.shared.summarizeNote(
-                    at: noteURL, transcriptMarkdown: transcriptMD, fallbackTitle: fallbackTitle
+                    at: noteURL, transcriptMarkdown: transcriptMD, fallbackTitle: fallbackTitle,
+                    userNotes: self.userNotes
                 ) { [weak self] result in
                     guard let self else { return }
                     AppState.shared.summaryInFlight = false
                     switch result {
-                    case .success:
-                        // Also refresh title/duration frontmatter from Claude's title.
-                        self.summaryPhase = .ready(noteURL: noteURL)
+                    case .success(let finalURL):
+                        // Note was retitled and renamed to Claude's title.
+                        self.summaryPhase = .ready(noteURL: finalURL)
                         MeetingController.notify(
                             title: "Meeting summarized",
                             body: "Summary and action items are ready.")
@@ -322,12 +345,13 @@ final class MeetingController: ObservableObject {
         AppState.shared.summaryInFlight = true
         ClaudeService.shared.summarizeNote(
             at: noteURL, transcriptMarkdown: transcript,
-            fallbackTitle: noteURL.deletingPathExtension().lastPathComponent
+            fallbackTitle: noteURL.deletingPathExtension().lastPathComponent,
+            userNotes: NotesStore.parseUserNotes(content) ?? ""
         ) { [weak self] result in
             AppState.shared.summaryInFlight = false
             switch result {
-            case .success:
-                self?.summaryPhase = .ready(noteURL: noteURL)
+            case .success(let finalURL):
+                self?.summaryPhase = .ready(noteURL: finalURL)
             case .failure(let error):
                 self?.summaryPhase = .failed(message: error.localizedDescription, noteURL: noteURL)
             }

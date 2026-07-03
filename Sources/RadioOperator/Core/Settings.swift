@@ -26,8 +26,22 @@ enum CleanupLevel: String, Codable, CaseIterable, Sendable {
     var displayName: String {
         switch self {
         case .off: return "Off — raw transcript"
-        case .light: return "Light — fillers only"
-        case .standard: return "Standard — fillers + dictionary + snippets"
+        case .light: return "Light — fillers + voice commands"
+        case .standard: return "Standard — fillers, commands, dictionary, snippets"
+        }
+    }
+}
+
+enum HistoryRetention: String, Codable, CaseIterable, Sendable {
+    case keep
+    case day
+    case never
+
+    var displayName: String {
+        switch self {
+        case .keep: return "Keep everything"
+        case .day: return "Auto-delete after 24 hours"
+        case .never: return "Don't store history"
         }
     }
 }
@@ -68,6 +82,45 @@ enum ClaudeMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
+enum AppearanceMode: String, Codable, CaseIterable, Sendable {
+    case system
+    case light
+    case dark
+
+    var displayName: String {
+        switch self {
+        case .system: return "Auto"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+}
+
+enum EchoGuardMode: String, Codable, CaseIterable, Sendable {
+    case auto
+    case on
+    case off
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .on: return "On"
+        case .off: return "Off"
+        }
+    }
+
+    /// Whether the transcript assembler should filter the user's own voice out
+    /// of the "Them" channel. Auto turns on only when the output is speakers
+    /// (own voice leaks through the room into the system tap).
+    func resolved(onSpeakers: Bool) -> Bool {
+        switch self {
+        case .on: return true
+        case .off: return false
+        case .auto: return onSpeakers
+        }
+    }
+}
+
 struct SettingsData: Codable, Sendable {
     var holdHotkey: HoldHotkey = .rightCommand
     var cleanupLevel: CleanupLevel = .standard
@@ -80,14 +133,33 @@ struct SettingsData: Codable, Sendable {
     var apiModel: String = "claude-haiku-4-5"
     var smartLeadingSpace: Bool = true
     var hasCompletedOnboarding: Bool = false
-    var echoGuard: Bool = false
+    var echoGuardMode: EchoGuardMode = .auto
+    var autoSummarize: Bool = true
+    var appearance: AppearanceMode = .system
+    var summaryTemplate: String = SettingsData.defaultSummaryTemplate
     /// Persistent UID of the preferred input device; nil = system default.
     var micDeviceUID: String? = nil
+    var historyRetention: HistoryRetention = .keep
+    var launchAtLogin: Bool = false
 
     static var defaultNotesFolder: String {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents/Radio Operator").path
     }
+
+    /// The output spec Claude fills in for a meeting. Editable in Settings;
+    /// a blank template falls back to this. Kept identical to the original
+    /// hardcoded structure so existing behavior is unchanged by default.
+    static let defaultSummaryTemplate = """
+    ## Summary
+    (3-6 tight bullets of what the meeting covered)
+
+    ## Decisions
+    (bullets of decisions actually made; write "- None" if none)
+
+    ## Action Items
+    (checkboxes like "- [ ] task — owner, due date"; owner/due only if stated; write "- None" if none)
+    """
 
     init() {}
 
@@ -96,7 +168,9 @@ struct SettingsData: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case holdHotkey, cleanupLevel, dictionary, snippets, notesFolderPath
         case retainAudio, claudeMode, claudeCLIModel, apiModel
-        case smartLeadingSpace, hasCompletedOnboarding, echoGuard, micDeviceUID
+        case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
+        case historyRetention, launchAtLogin
+        case autoSummarize, appearance, summaryTemplate
     }
 
     init(from decoder: Decoder) throws {
@@ -113,8 +187,13 @@ struct SettingsData: Codable, Sendable {
         apiModel = (try? c.decodeIfPresent(String.self, forKey: .apiModel)) ?? d.apiModel
         smartLeadingSpace = (try? c.decodeIfPresent(Bool.self, forKey: .smartLeadingSpace)) ?? d.smartLeadingSpace
         hasCompletedOnboarding = (try? c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)) ?? d.hasCompletedOnboarding
-        echoGuard = (try? c.decodeIfPresent(Bool.self, forKey: .echoGuard)) ?? d.echoGuard
+        echoGuardMode = (try? c.decodeIfPresent(EchoGuardMode.self, forKey: .echoGuardMode)) ?? d.echoGuardMode
         micDeviceUID = (try? c.decodeIfPresent(String.self, forKey: .micDeviceUID)) ?? d.micDeviceUID
+        historyRetention = (try? c.decodeIfPresent(HistoryRetention.self, forKey: .historyRetention)) ?? d.historyRetention
+        launchAtLogin = (try? c.decodeIfPresent(Bool.self, forKey: .launchAtLogin)) ?? d.launchAtLogin
+        autoSummarize = (try? c.decodeIfPresent(Bool.self, forKey: .autoSummarize)) ?? d.autoSummarize
+        appearance = (try? c.decodeIfPresent(AppearanceMode.self, forKey: .appearance)) ?? d.appearance
+        summaryTemplate = (try? c.decodeIfPresent(String.self, forKey: .summaryTemplate)) ?? d.summaryTemplate
     }
 }
 

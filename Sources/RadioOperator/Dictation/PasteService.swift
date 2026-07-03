@@ -42,11 +42,16 @@ final class PasteService {
         return await task.value
     }
 
+    /// Clipboard managers honor this marker and skip the item — dictations
+    /// shouldn't accumulate in third-party clipboard history.
+    private static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+
     private func performPaste(_ text: String, target: Target) async -> Outcome {
         let pb = NSPasteboard.general
         let saved = savePasteboard(pb)
         pb.clearContents()
         pb.setString(text, forType: .string)
+        pb.setString("1", forType: PasteService.concealedType)
         let ourChangeCount = pb.changeCount
 
         // Precondition: secure input (password fields, Terminal Secure

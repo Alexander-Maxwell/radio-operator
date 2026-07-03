@@ -18,15 +18,78 @@ enum CleanupEngine {
         case .off:
             return raw.trimmingCharacters(in: .whitespacesAndNewlines)
         case .light:
-            return normalize(removeFillers(raw))
+            return normalize(applyCommands(removeFillers(raw)))
         case .standard:
-            var text = removeFillers(raw)
+            var text = applyCommands(removeFillers(raw))
             text = applyDictionary(text, entries: settings.dictionary)
             if let expansion = snippetExpansion(for: text, snippets: settings.snippets) {
                 return expansion
             }
             return normalize(text)
         }
+    }
+
+    // MARK: - Voice commands
+
+    /// Deterministic spoken commands: "new line" → \n, "new paragraph" → \n\n,
+    /// "scratch that" deletes back through the previous clause/sentence.
+    /// Article-guarded ("a new line of products" survives); like the filler
+    /// pass, telling every literal use apart would need a parser, not regex.
+    static func applyCommands(_ s: String) -> String {
+        guard !s.isEmpty else { return s }
+        var text = applyScratchThat(s)
+        text = newParagraphCmd.stringByReplacingMatches(
+            in: text, options: [], range: fullRange(text), withTemplate: "\n\n")
+        text = newLineCmd.stringByReplacingMatches(
+            in: text, options: [], range: fullRange(text), withTemplate: "\n")
+        return text
+    }
+
+    /// Words that mark "new line/paragraph" as content, not command.
+    private static let articleGuard =
+        "(?<!\\ba )(?<!\\ban )(?<!\\bthe )(?<!\\bthis )(?<!\\bthat )(?<!\\banother )" +
+        "(?<!\\beach )(?<!\\bevery )(?<!\\bany )(?<!\\bwhole )(?<!\\bentire )(?<!\\bbrand )"
+
+    private static let newLineCmd = regex(
+        ",?[ \\t]*\(articleGuard)\\bnew[ \\t]+line\\b[.,!?;:]?[ \\t]*", .caseInsensitive)
+    private static let newParagraphCmd = regex(
+        ",?[ \\t]*\(articleGuard)\\bnew[ \\t]+paragraph\\b[.,!?;:]?[ \\t]*", .caseInsensitive)
+
+    private static let scratchCmd = regex("\\bscratch that\\b[.,!?;:]?[ \\t]*", .caseInsensitive)
+    private static let clauseBoundaries = CharacterSet(charactersIn: ".!?,;:\n")
+
+    /// Each "scratch that" deletes back to the previous clause boundary; when
+    /// the phrase opens its own clause ("… Monday. Scratch that."), it takes
+    /// the clause before that one with it.
+    private static func applyScratchThat(_ s: String) -> String {
+        var text = s
+        while let m = scratchCmd.firstMatch(in: text, options: [], range: fullRange(text)) {
+            let ns = text as NSString
+            let phraseStart = m.range.location
+            let phraseEnd = m.range.location + m.range.length
+
+            func boundaryBefore(_ limit: Int) -> Int {
+                var i = limit - 1
+                while i >= 0 {
+                    if let scalar = Unicode.Scalar(ns.character(at: i)),
+                       clauseBoundaries.contains(scalar) {
+                        return i + 1
+                    }
+                    i -= 1
+                }
+                return 0
+            }
+
+            let b1 = boundaryBefore(phraseStart)
+            let segment = ns.substring(with: NSRange(location: b1, length: phraseStart - b1))
+                .trimmingCharacters(in: .whitespaces)
+            let deleteFrom = (segment.isEmpty && b1 > 0) ? boundaryBefore(b1 - 1) : b1
+
+            let mutable = NSMutableString(string: text)
+            mutable.deleteCharacters(in: NSRange(location: deleteFrom, length: phraseEnd - deleteFrom))
+            text = mutable as String
+        }
+        return text
     }
 
     // MARK: - Fillers

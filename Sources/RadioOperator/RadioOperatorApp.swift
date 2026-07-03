@@ -41,6 +41,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Route capture to the user's chosen microphone (nil = system default).
         MicCapture.shared.preferredDeviceUID = SettingsStore.shared.data.micDeviceUID
 
+        // Reconcile the login item with the setting (registration can be
+        // dropped externally via System Settings).
+        LaunchAtLogin.sync(enabled: SettingsStore.shared.data.launchAtLogin)
+
+        // Honor the saved appearance preference across every window.
+        Appearance.apply(SettingsStore.shared.data.appearance)
+
+        // 24-hour retention: prune anything a crash or sleep let linger.
+        if SettingsStore.shared.data.historyRetention == .day {
+            HistoryStore.shared.prune(olderThan: Date(timeIntervalSinceNow: -86_400))
+            NotesStore.pruneDictationLogs(in: NotesStore.shared.dictationsFolder, keepingDays: 1)
+        }
+
         // Pre-warm the speech format query so the first hotkey press is fast.
         Task.detached { _ = await Transcriber.preferredFormat() }
 
@@ -197,24 +210,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openLibraryAction() { openLibrary() }
     @objc private func openOnboardingAction() { openOnboarding() }
 
-    private func openLibrary() {
-        WindowRouter.shared.show(id: "library", title: "Radio Operator Library",
-                                 size: NSSize(width: 720, height: 520)) {
-            LibraryView().environmentObject(SettingsStore.shared)
-        }
-    }
+    private func openLibrary() { openHub(.library) }
 
-    @objc private func openAsk() {
-        WindowRouter.shared.show(id: "ask", title: "Ask Radio Operator",
-                                 size: NSSize(width: 560, height: 480)) {
-            AskView()
-        }
-    }
+    @objc private func openAsk() { openHub(.ask) }
 
-    @objc private func openSettings() {
-        WindowRouter.shared.show(id: "settings", title: "Radio Operator Settings",
-                                 size: NSSize(width: 620, height: 560)) {
-            SettingsView().environmentObject(SettingsStore.shared)
+    @objc private func openSettings() { openHub(.dictation) }
+
+    /// Library, Ask, and Settings all live in one hub window; the menu item just
+    /// selects which section it lands on (an already-open hub navigates live).
+    private func openHub(_ section: HubSection) {
+        HubState.shared.section = section
+        WindowRouter.shared.show(id: "hub", title: "Radio Operator",
+                                 size: NSSize(width: 980, height: 660)) {
+            HubView().environmentObject(SettingsStore.shared)
         }
     }
 

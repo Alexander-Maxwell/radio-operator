@@ -31,6 +31,10 @@ final class DictationController {
     private var finals: [String] = []
     private var stopRequested = false
     private var errorDismissTask: Task<Void, Never>?
+    /// Hands-free mode: entered by double-tapping the hold hotkey; the session
+    /// keeps recording after release and the next press finishes it.
+    private var locked = false
+    private var lastHotkeyDownAt: Date?
 
     let hotkeys = HotkeyManager()
 
@@ -44,14 +48,55 @@ final class DictationController {
         hotkeys.start()
     }
 
+    /// Two hotkey presses inside this window mean "lock hands-free".
+    nonisolated static func isDoubleTap(previousDown: Date?, now: Date) -> Bool {
+        guard let previousDown else { return false }
+        let dt = now.timeIntervalSince(previousDown)
+        return dt > 0 && dt < 0.4
+    }
+
+    /// What a hotkey-down press should do, decided purely from the current
+    /// state so the double-tap/lock transitions are unit-testable without
+    /// touching the mic/transcriber singletons.
+    enum HotkeyDownAction: Equatable { case ignore, beginNormal, beginLocked, finishLocked }
+
+    nonisolated static func hotkeyDownAction(idle: Bool, activeOrStarting: Bool,
+                                             locked: Bool, doubleTap: Bool) -> HotkeyDownAction {
+        // A press during a live locked session ends it (hands-free stop).
+        if locked && activeOrStarting { return .finishLocked }
+        // A quick second press locks — even if the first tap is still
+        // finalizing (the old bug: this was ignored because state != .idle).
+        if doubleTap { return .beginLocked }
+        if idle { return .beginNormal }
+        return .ignore
+    }
+
     // MARK: - Hotkey entry points
 
     func hotkeyDown() {
-        guard state == .idle else { return }
-        begin()
+        let now = Date()
+        let doubleTap = DictationController.isDoubleTap(previousDown: lastHotkeyDownAt, now: now)
+        lastHotkeyDownAt = now
+        let active = (state == .starting || state == .recording)
+        switch DictationController.hotkeyDownAction(
+            idle: state == .idle, activeOrStarting: active, locked: locked, doubleTap: doubleTap) {
+        case .finishLocked:
+            endAndPaste()
+        case .beginLocked:
+            // Abandon the throwaway first tap, start a fresh hands-free locked
+            // session. The abandoned session's finalize is a no-op: its Task
+            // guards on `state == .stopping`, which begin() has since changed.
+            cancel(quiet: true)
+            begin(locked: true)
+        case .beginNormal:
+            begin(locked: false)
+        case .ignore:
+            break
+        }
     }
 
     func hotkeyUp() {
+        if locked { return } // hands-free: releasing the key means nothing
         switch state {
         case .starting, .recording:
             // Release faster than 120ms = accidental tap, discard quietly.
@@ -76,7 +121,7 @@ final class DictationController {
 
     // MARK: - Session lifecycle
 
-    private func begin() {
+    private func begin(locked: Bool = false) {
         // Capture the paste target BEFORE any of our UI can appear.
         target = paste.captureTarget()
         pressedAt = Date()
@@ -84,6 +129,8 @@ final class DictationController {
         stopRequested = false
         state = .starting
         errorDismissTask?.cancel()
+        self.locked = locked
+        AppState.shared.dictationLocked = locked
 
         AppState.shared.dictationPhase = .recording
         AppState.shared.pillVolatile = ""
@@ -161,6 +208,7 @@ final class DictationController {
     private func finishSession() {
         guard state == .recording || state == .stopping else { return }
         state = .stopping
+        clearLock()
         AppState.shared.dictationPhase = .finalizing
         hotkeys.setRecordingTapEnabled(false)
 
@@ -200,14 +248,26 @@ final class DictationController {
                 self.state = .idle
                 AppState.shared.dictationPhase = .pasting
                 let target = self.target ?? self.paste.captureTarget()
-                let text = SettingsStore.shared.data.smartLeadingSpace ? cleaned : cleaned
+                let text = SettingsStore.shared.data.smartLeadingSpace
+                    ? SmartSpace.merged(cleaned, needsSpace: SmartSpace.needsLeadingSpace(target: target))
+                    : cleaned
                 Task { @MainActor in
                     let outcome = await self.paste.paste(text, target: target)
                     let pasteOK = outcome == .pasted
-                    HistoryStore.shared.record(
-                        raw: raw, cleaned: cleaned,
-                        appBundleID: target.bundleID,
-                        durationMs: durationMs, pasteOK: pasteOK)
+                    let retention = SettingsStore.shared.data.historyRetention
+                    if retention != .never {
+                        HistoryStore.shared.record(
+                            raw: raw, cleaned: cleaned,
+                            appBundleID: target.bundleID,
+                            durationMs: durationMs, pasteOK: pasteOK)
+                        // Markdown mirror so Ask's CLI grep can see dictations.
+                        NotesStore.shared.appendDictation(text: cleaned, appName: target.bundleID)
+                        if retention == .day {
+                            HistoryStore.shared.prune(olderThan: Date(timeIntervalSinceNow: -86_400))
+                            NotesStore.pruneDictationLogs(
+                                in: NotesStore.shared.dictationsFolder, keepingDays: 1)
+                        }
+                    }
                     switch outcome {
                     case .pasted:
                         AppState.shared.dictationPhase = .idle
@@ -226,6 +286,7 @@ final class DictationController {
     func cancel(quiet: Bool = false) {
         guard state == .starting || state == .recording || state == .stopping else { return }
         state = .cancelling
+        clearLock()
         hotkeys.setRecordingTapEnabled(false)
         startTask?.cancel()
         if let micToken {
@@ -238,7 +299,13 @@ final class DictationController {
         _ = quiet // both paths dismiss silently; parameter kept for clarity at call sites
     }
 
+    private func clearLock() {
+        locked = false
+        AppState.shared.dictationLocked = false
+    }
+
     private func failSession(_ message: String) {
+        clearLock()
         hotkeys.setRecordingTapEnabled(false)
         if let micToken {
             MicCapture.shared.unsubscribe(micToken)
@@ -266,6 +333,7 @@ final class DictationController {
     private func resetToIdle() {
         state = .idle
         transcriber = nil
+        clearLock()
         AppState.shared.dictationPhase = .idle
         AppState.shared.pillVolatile = ""
         AppState.shared.pillFinal = ""

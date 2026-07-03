@@ -62,7 +62,8 @@ struct PillView: View {
     private var statusText: String {
         switch state.dictationPhase {
         case .idle: return ""
-        case .recording: return "Listening"
+        case .recording:
+            return state.dictationLocked ? "Listening — locked, press the hotkey to finish" : "Listening"
         case .finalizing: return "Finishing…"
         case .pasting: return "Pasting…"
         case .error(let message): return message

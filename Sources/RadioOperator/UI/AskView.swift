@@ -1,10 +1,13 @@
 import SwiftUI
 import AppKit
 
-/// Chat over the local notes corpus via ClaudeService.ask. One question in
-/// flight at a time; answers cite note filenames as tappable chips.
-struct AskView: View {
-    private struct Message: Identifiable {
+/// Holds the Ask conversation outside the view so closing the window doesn't
+/// erase it, and so prior turns can feed the next question as context.
+@MainActor
+final class AskSession: ObservableObject {
+    static let shared = AskSession()
+
+    struct Message: Identifiable {
         enum Role { case user, assistant }
         let id = UUID()
         var role: Role
@@ -15,10 +18,37 @@ struct AskView: View {
         var citations: [String] = []
     }
 
-    @State private var messages: [Message] = []
-    @State private var input = ""
-    @State private var askTask: Task<Void, Never>?
+    @Published var messages: [Message] = []
+    var askTask: Task<Void, Never>?
 
+    /// Completed (question, answer) pairs for multi-turn context.
+    func historyPairs() -> [(String, String)] {
+        var pairs: [(String, String)] = []
+        var lastQuestion: String?
+        for m in messages {
+            switch m.role {
+            case .user:
+                lastQuestion = m.text
+            case .assistant:
+                if !m.isPending, m.retryQuestion == nil, !m.text.isEmpty, let q = lastQuestion {
+                    pairs.append((q, m.text))
+                    lastQuestion = nil
+                }
+            }
+        }
+        return pairs
+    }
+}
+
+/// Chat over the local notes corpus via ClaudeService.ask. One question in
+/// flight at a time; answers cite note filenames as tappable chips.
+struct AskView: View {
+    private typealias Message = AskSession.Message
+
+    @ObservedObject private var session = AskSession.shared
+    @State private var input = ""
+
+    private var messages: [Message] { session.messages }
     private var isPending: Bool { messages.contains { $0.isPending } }
 
     var body: some View {
@@ -129,6 +159,16 @@ struct AskView: View {
 
     private var inputBar: some View {
         HStack(spacing: 8) {
+            if !messages.isEmpty {
+                Button {
+                    stop()
+                    session.messages = []
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .help("New conversation")
+                .disabled(isPending)
+            }
             TextField("Ask about your notes…", text: $input)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(send)
@@ -149,21 +189,24 @@ struct AskView: View {
     }
 
     private func submit(_ question: String) {
-        messages.append(Message(role: .user, text: question))
+        // Prior completed turns become context BEFORE this question is added.
+        let history = session.historyPairs()
+        session.messages.append(Message(role: .user, text: question))
         // Empty corpus → answer instantly without spawning Claude.
         if NotesStore.shared.listMeetings().isEmpty && HistoryStore.shared.recent(limit: 1).isEmpty {
-            messages.append(Message(
+            session.messages.append(Message(
                 role: .assistant,
                 text: "Nothing to search yet — capture a meeting or a dictation first."))
             return
         }
         let pending = Message(role: .assistant, text: "", isPending: true)
-        messages.append(pending)
+        session.messages.append(pending)
         let pendingID = pending.id
-        askTask = Task {
+        session.askTask = Task {
             do {
                 let answer = try await ClaudeService.shared.ask(
-                    question: question, notesFolder: SettingsStore.shared.notesFolderURL)
+                    question: question, history: history,
+                    notesFolder: SettingsStore.shared.notesFolderURL)
                 guard !Task.isCancelled else { return }
                 replace(pendingID, with: Message(
                     role: .assistant, text: answer, citations: Self.citations(in: answer)))
@@ -176,16 +219,16 @@ struct AskView: View {
     }
 
     private func stop() {
-        askTask?.cancel()
-        askTask = nil
+        session.askTask?.cancel() // cancellation also terminates the CLI child
+        session.askTask = nil
         guard let index = messages.firstIndex(where: { $0.isPending }) else { return }
         let lastQuestion = messages.last(where: { $0.role == .user })?.text
-        messages[index] = Message(role: .assistant, text: "Stopped.", retryQuestion: lastQuestion)
+        session.messages[index] = Message(role: .assistant, text: "Stopped.", retryQuestion: lastQuestion)
     }
 
     private func replace(_ id: UUID, with message: Message) {
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
-        messages[index] = message
+        session.messages[index] = message
     }
 
     /// Pulls unique [filename.md] citations, in order of first appearance.

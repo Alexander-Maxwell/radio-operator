@@ -124,6 +124,52 @@ enum CleanupEngineTestCases {
             t.expectEqual(CleanupEngine.clean("sig work", settings: settings), "Sig work", "snippet skipped")
         }
 
+        // MARK: - Voice commands
+
+        t.test("new paragraph command") { t in
+            t.expectEqual(CleanupEngine.clean("first point new paragraph second point", settings: makeSettings()),
+                          "First point\n\nSecond point", "bare new paragraph")
+            t.expectEqual(CleanupEngine.clean("Thanks. New paragraph. Best regards", settings: makeSettings()),
+                          "Thanks.\n\nBest regards", "punctuated new paragraph")
+        }
+
+        t.test("new line command") { t in
+            t.expectEqual(CleanupEngine.clean("item one new line item two", settings: makeSettings()),
+                          "Item one\nItem two", "bare new line")
+        }
+
+        t.test("article-protected new line is not a command") { t in
+            t.expectEqual(CleanupEngine.clean("we need a new line of products", settings: makeSettings()),
+                          "We need a new line of products", "a new line")
+            t.expectEqual(CleanupEngine.clean("start the new paragraph tomorrow", settings: makeSettings()),
+                          "Start the new paragraph tomorrow", "the new paragraph")
+        }
+
+        t.test("scratch that removes previous sentence") { t in
+            t.expectEqual(CleanupEngine.clean("send it Monday. scratch that. send it Friday", settings: makeSettings()),
+                          "Send it Friday", "sentence backtrack")
+        }
+
+        t.test("scratch that removes previous clause") { t in
+            t.expectEqual(CleanupEngine.clean("use the red one scratch that use the blue one", settings: makeSettings()),
+                          "Use the blue one", "mid-sentence backtrack")
+        }
+
+        t.test("commands run at light level") { t in
+            t.expectEqual(CleanupEngine.clean("um one new line two", settings: makeSettings(level: .light)),
+                          "One\nTwo", "light level commands")
+        }
+
+        t.test("command output is idempotent") { t in
+            let settings = makeSettings()
+            for input in ["first point new paragraph second point",
+                          "send it Monday. scratch that. send it Friday"] {
+                let once = CleanupEngine.clean(input, settings: settings)
+                t.expectEqual(CleanupEngine.clean(once, settings: settings), once,
+                              "not idempotent for: \(input)")
+            }
+        }
+
         // MARK: - Normalize
 
         t.test("normalize spacing and capitalization") { t in

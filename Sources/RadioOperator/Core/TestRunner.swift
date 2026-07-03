@@ -40,6 +40,8 @@ enum TestRunner {
         CleanupEngineTestCases.run(t)
         TranscriptAssemblerTestCases.run(t)
         NotesStoreTestCases.run(t)
+        HistoryStoreTestCases.run(t)
+        MiscFeatureTestCases.run(t)
         print("PASSED: \(t.passed)")
         if t.failures.isEmpty {
             print("ALL TESTS PASSED")
@@ -79,6 +81,94 @@ enum NotesStoreTestCases {
                 title: "T", start: Date(), durationSeconds: 1,
                 summaryMarkdown: "s", utterances: [], degradedMicOnly: true)
             t.expect(note.contains("microphone-only"), "degraded marker present")
+        }
+        t.test("retitled content swaps frontmatter and H1") { t in
+            let note = NotesStore.renderNote(
+                title: "Meeting in progress", start: Date(timeIntervalSince1970: 1_780_000_000),
+                durationSeconds: 0, summaryMarkdown: NotesStore.summaryPendingMarker,
+                utterances: [], degradedMicOnly: false)
+            let out = NotesStore.retitledContent(note, title: "Budget Sync")
+            t.expectEqual(NotesStore.parseFrontmatter(out)["title"] ?? "", "Budget Sync", "frontmatter title")
+            t.expect(out.contains("\n# Budget Sync"), "H1 swapped")
+            t.expect(!out.contains("Meeting in progress"), "old title gone")
+        }
+        t.test("retitled filename keeps stamp") { t in
+            t.expectEqual(
+                NotesStore.retitledFilename(currentStem: "2026-07-02-0930 Meeting in progress",
+                                            title: "Budget Sync"),
+                "2026-07-02-0930 Budget Sync", "stamp preserved")
+            t.expectEqual(
+                NotesStore.retitledFilename(currentStem: "custom name", title: "Budget Sync"),
+                "Budget Sync", "no stamp falls back to title")
+        }
+        t.test("performRetitle renames note and audio") { t in
+            let fm = FileManager.default
+            let tmp = fm.temporaryDirectory.appendingPathComponent("ro-test-\(UUID().uuidString)")
+            let meetings = tmp.appendingPathComponent("Meetings")
+            let audio = tmp.appendingPathComponent("Audio")
+            try? fm.createDirectory(at: meetings, withIntermediateDirectories: true)
+            try? fm.createDirectory(at: audio, withIntermediateDirectories: true)
+            defer { try? fm.removeItem(at: tmp) }
+
+            let old = meetings.appendingPathComponent("2026-07-02-0930 Meeting in progress.md")
+            let note = NotesStore.renderNote(
+                title: "Meeting in progress", start: Date(timeIntervalSince1970: 1_780_000_000),
+                durationSeconds: 60, summaryMarkdown: "## Summary\n- s",
+                utterances: [], degradedMicOnly: false)
+            try? note.write(to: old, atomically: true, encoding: .utf8)
+            let oldAudio = audio.appendingPathComponent("2026-07-02-0930 Meeting in progress - me.m4a")
+            try? Data("x".utf8).write(to: oldAudio)
+
+            let newURL = NotesStore.performRetitle(noteURL: old, title: "Budget Sync", audioFolder: audio)
+            t.expectEqual(newURL.lastPathComponent, "2026-07-02-0930 Budget Sync.md", "new filename")
+            t.expect(fm.fileExists(atPath: newURL.path), "new file exists")
+            t.expect(!fm.fileExists(atPath: old.path), "old file gone")
+            t.expect(fm.fileExists(atPath: audio.appendingPathComponent("2026-07-02-0930 Budget Sync - me.m4a").path),
+                     "audio moved with note")
+            let content = (try? String(contentsOf: newURL, encoding: .utf8)) ?? ""
+            t.expect(content.contains("# Budget Sync"), "content retitled")
+        }
+        t.test("replacedSummary preserves my notes") { t in
+            let note = NotesStore.renderNote(
+                title: "T", start: Date(), durationSeconds: 5,
+                summaryMarkdown: NotesStore.summaryPendingMarker,
+                utterances: [], degradedMicOnly: false, userNotes: "remember the budget")
+            let out = NotesStore.replacedSummary(in: note, with: "## Summary\n- did things")
+            t.expect(out.contains("## Summary\n- did things"), "summary replaced")
+            t.expect(!out.contains(NotesStore.summaryPendingMarker), "pending marker gone")
+            t.expect(out.contains("## My Notes"), "my notes section preserved")
+            t.expect(out.contains("remember the budget"), "note text preserved")
+            t.expect(out.contains("summary: done"), "frontmatter flag flipped")
+            t.expect(out.contains("## Transcript"), "transcript intact")
+        }
+        t.test("userNotes render and parse round-trip") { t in
+            let note = NotesStore.renderNote(
+                title: "T", start: Date(), durationSeconds: 5,
+                summaryMarkdown: "s", utterances: [], degradedMicOnly: false,
+                userNotes: "key point\nsecond line")
+            t.expectEqual(NotesStore.parseUserNotes(note) ?? "", "key point\nsecond line", "round trip")
+            let plain = NotesStore.renderNote(
+                title: "T", start: Date(), durationSeconds: 5,
+                summaryMarkdown: "s", utterances: [], degradedMicOnly: false)
+            t.expect(!plain.contains("## My Notes"), "no section when empty")
+            t.expect(NotesStore.parseUserNotes(plain) == nil, "nil when absent")
+        }
+        t.test("appendDictation writes daily log") { t in
+            let fm = FileManager.default
+            let tmp = fm.temporaryDirectory.appendingPathComponent("ro-dict-\(UUID().uuidString)")
+            try? fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+            defer { try? fm.removeItem(at: tmp) }
+            let date = Date(timeIntervalSince1970: 1_780_000_000)
+            NotesStore.appendDictation(text: "hello world", appName: "com.tinyspeck.slackmacgap",
+                                       date: date, folder: tmp)
+            NotesStore.appendDictation(text: "second entry", appName: nil, date: date, folder: tmp)
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            let url = tmp.appendingPathComponent("\(df.string(from: date)).md")
+            let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            t.expect(content.contains("hello world"), "first entry present")
+            t.expect(content.contains("second entry"), "second entry appended")
+            t.expect(content.contains("com.tinyspeck.slackmacgap"), "app recorded")
         }
     }
 }
