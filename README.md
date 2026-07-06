@@ -74,8 +74,13 @@ Without a Developer ID identity, `make release` explains and exits cleanly.
 The sandbox blocks the app's core mechanics: posting synthetic ⌘V (CGEvent),
 the recording-scoped key tap, activating the target app, and the Core Audio
 process tap. Compensating controls: hardened runtime ON, least-privilege
-entitlements (asserted at build), on-device speech, single network egress
-(opt-in API mode only), history encrypted at rest, keys in Keychain.
+entitlements (asserted at build), **on-device speech**, history encrypted at
+rest, keys in Keychain, and a single content-egress destination (Anthropic).
+Note the app process itself opens exactly one network connection (the API in
+opt-in API mode); in the default CLI mode the `claude` subprocess is what
+reaches Anthropic — so meeting summaries, titles, and Ask do send that content
+off-device. Plain dictation stays fully local (deterministic cleanup, no LLM);
+turn off auto-summarize and skip Ask to keep everything on this Mac.
 
 ## Data at rest
 

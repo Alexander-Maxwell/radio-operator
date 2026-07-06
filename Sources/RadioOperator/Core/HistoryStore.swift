@@ -273,6 +273,12 @@ final class HistoryStore: @unchecked Sendable {
     /// Case-insensitive substring search over raw and cleaned text. Encrypted
     /// columns can't be matched in SQL, so rows stream newest-first and are
     /// decrypted + matched in memory until `limit` hits. Wildcards are literal.
+    ///
+    /// Cost note: a non-matching query decrypts every row (O(n)), and under the
+    /// default `.keep` retention n grows unbounded. Acceptable for a personal
+    /// history, and the Library runs this debounced + off the main thread. If it
+    /// ever needs bounding, add a keyed-HMAC search-token column to prefilter in
+    /// SQL, or cap the scan window.
     func search(query: String, limit: Int = 200) -> [DictationRecord] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return recent(limit: limit) }
@@ -316,12 +322,14 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    /// Deletes every dictation row, then rewrites the file so nothing is
-    /// recoverable from freed pages.
+    /// Deletes every dictation row. `secure_delete=ON` (set at open) overwrites
+    /// each deleted cell's content with zeros in place, so nothing is
+    /// recoverable from the freed pages — no VACUUM needed here (a full-file
+    /// rewrite would only reclaim disk space, and this runs on the caller's
+    /// thread from a UI button). Transcript columns are ciphertext regardless.
     func deleteAll() {
         queue.sync {
             exec("DELETE FROM dictations")
-            exec("VACUUM")
         }
     }
 
