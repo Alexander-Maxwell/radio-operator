@@ -3,6 +3,17 @@ import SwiftUI
 import Combine
 import UserNotifications
 
+/// What a `radiooperator://` URL asks the app to do. Parsed by the pure
+/// `AppDelegate.parseURLCommand(_:)` so the mapping is unit-testable without
+/// AppKit. Junk input maps to `.unknown` (a no-op), never a crash.
+enum URLCommand: Equatable {
+    case dictateToggle
+    case meetingStart
+    case meetingStop
+    case hub(HubSection)
+    case unknown
+}
+
 @main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -25,6 +36,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Posted when another app starts using the mic (a call begins). Nonisolated
     /// so the mic monitor's `@Sendable` callback can reference it off the main actor.
     nonisolated static let micActivatedNote = Notification.Name("radiooperator.micActivated")
+
+    /// URL-scheme automation (`radiooperator://…`, Shortcuts-callable via
+    /// "Open URLs"). The kAEGetURL handler must be registered here — by
+    /// `applicationDidFinishLaunching` a launch-triggering URL event has
+    /// already been delivered and would be dropped.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURL(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL))
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -220,6 +243,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return false
             }()
         return MenuBarIcon.image(capturing: capturing)
+    }
+
+    // MARK: - URL scheme (radiooperator://)
+
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor,
+                                    withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString) else { return }
+        route(AppDelegate.parseURLCommand(url))
+    }
+
+    /// Pure URL → command mapping. Nonisolated and side-effect-free on purpose:
+    /// tested by URLCommandTestCases without an NSApplication.
+    ///
+    /// Accepted forms (scheme/host/path case-insensitive, trailing slash ok):
+    ///   radiooperator://dictate
+    ///   radiooperator://meeting/start | radiooperator://meeting/stop
+    ///   radiooperator://hub/library|ask|dictionary|snippets|settings
+    nonisolated static func parseURLCommand(_ url: URL) -> URLCommand {
+        guard url.scheme?.lowercased() == "radiooperator" else { return .unknown }
+        let host = url.host?.lowercased() ?? ""
+        let segments = url.pathComponents
+            .filter { $0 != "/" && !$0.isEmpty }
+            .map { $0.lowercased() }
+        switch (host, segments.count) {
+        case ("dictate", 0):
+            return .dictateToggle
+        case ("meeting", 1):
+            switch segments[0] {
+            case "start": return .meetingStart
+            case "stop":  return .meetingStop
+            default:      return .unknown
+            }
+        case ("hub", 1):
+            switch segments[0] {
+            case "library":    return .hub(.library)
+            case "ask":        return .hub(.ask)
+            case "dictionary": return .hub(.dictionary)
+            case "snippets":   return .hub(.snippets)
+            // Same landing section as the "Settings…" menu item.
+            case "settings":   return .hub(.dictation)
+            default:           return .unknown
+            }
+        default:
+            return .unknown
+        }
+    }
+
+    /// Routes a parsed command to the existing menu actions — no new
+    /// controller paths, so URL triggers behave exactly like menu clicks.
+    /// Meeting start/stop are idempotent: a redundant trigger (e.g. a
+    /// Shortcut firing "start" while already recording) is a no-op instead
+    /// of a toggle in the wrong direction.
+    private func route(_ command: URLCommand) {
+        switch command {
+        case .dictateToggle:
+            toggleDictation()
+        case .meetingStart:
+            if !MeetingController.shared.isActive { toggleMeeting() }
+        case .meetingStop:
+            if MeetingController.shared.isActive { toggleMeeting() }
+        case .hub(let section):
+            openHub(section)
+        case .unknown:
+            break
+        }
     }
 
     // MARK: - Actions

@@ -44,9 +44,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<string>Radio Operator activates the app you were using so it can paste your dictated text at the cursor.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 War Room</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.warroom.radiooperator</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>radiooperator</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
 PLIST
+
+# Fail fast on malformed plist XML (heredoc edits are easy to break).
+plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
 if [ -f resources/RadioOperator.icns ]; then
   cp resources/RadioOperator.icns "$APP/Contents/Resources/"

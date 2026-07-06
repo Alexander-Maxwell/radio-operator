@@ -45,6 +45,7 @@ enum TestRunner {
         WordErrorRateTestCases.run(t)
         MCPTestCases.run(t)
         CommandModeTestCases.run(t)
+        URLCommandTestCases.run(t)
         print("PASSED: \(t.passed)")
         if t.failures.isEmpty {
             print("ALL TESTS PASSED")

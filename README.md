@@ -150,6 +150,31 @@ and history database as the app (SQLite `busy_timeout` makes sharing safe).
 If the login Keychain is locked, history searches return a clear error
 instead of falling back to plaintext.
 
+## URL scheme automation
+
+The app registers the `radiooperator://` scheme, so Shortcuts, Raycast,
+Alfred, or a plain `open` command can trigger it — no App Intents, no
+extra setup:
+
+| URL | Action |
+|---|---|
+| `radiooperator://dictate` | toggle dictation |
+| `radiooperator://meeting/start` | start a meeting (no-op if one is already recording) |
+| `radiooperator://meeting/stop` | stop the current meeting (no-op if idle) |
+| `radiooperator://hub/library` | open the Library (also: `ask`, `dictionary`, `snippets`, `settings`) |
+
+Shortcuts example — a "Start Meeting" shortcut you can put in the menu bar
+or bind to a hotkey:
+
+1. Shortcuts → New Shortcut → add the **Open URLs** action.
+2. Set the URL to `radiooperator://meeting/start`.
+
+Or from a terminal / script: `open "radiooperator://dictate"`.
+
+Unrecognized URLs are ignored. The scheme only works from the built app
+bundle (`scripts/bundle.sh`), which is what registers it with Launch
+Services.
+
 ## Probes
 
 Headless checks that need no permissions:
