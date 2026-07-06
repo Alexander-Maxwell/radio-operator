@@ -157,11 +157,57 @@ enum HistoryStoreTestCases {
             var erased = false
             let store = HistoryStore(path: url.path,
                                      cipher: HistoryCipher(key: SymmetricKey(size: .bits256)),
-                                     destroyKey: { erased = true })
+                                     destroyKey: { erased = true },
+                                     rotateKey: { HistoryCipher(key: SymmetricKey(size: .bits256)) })
             store.record(raw: "gone", cleaned: "gone", appBundleID: nil, durationMs: 1, pasteOK: true)
-            store.panicWipe()
+            t.expect(store.panicWipe(), "rekey reported success")
             t.expectEqual(store.recent().count, 0, "table emptied")
             t.expect(erased, "key-erase invoked")
+        }
+
+        t.test("panicWipe rotates the key in place — post-wipe rows sealed with the FRESH key") { t in
+            // Regression: the wipe used to leave the destroyed key active in the
+            // live store, so every dictation until relaunch was sealed with a
+            // dead key and silently lost on the next launch.
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
+            defer { try? FileManager.default.removeItem(at: url) }
+            let freshKey = HistoryCipher(key: SymmetricKey(size: .bits256))
+            let store = HistoryStore(path: url.path,
+                                     cipher: HistoryCipher(key: SymmetricKey(size: .bits256)),
+                                     destroyKey: {},
+                                     rotateKey: { freshKey })
+            store.record(raw: "pre-wipe", cleaned: "pre-wipe", appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expect(store.panicWipe(), "rotation succeeded")
+            store.record(raw: "post-wipe-row", cleaned: "post-wipe-row",
+                         appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expectEqual(store.recent().first?.cleanedText ?? "MISSING", "post-wipe-row",
+                          "post-wipe row readable in the live session")
+            // A relaunch (new store holding only the rotated key) must still
+            // read it — proving it was sealed with the NEW key, not the dead one.
+            let relaunched = HistoryStore(path: url.path, cipher: freshKey)
+            t.expectEqual(relaunched.recent().first?.cleanedText ?? "MISSING", "post-wipe-row",
+                          "post-wipe row survives relaunch under the rotated key")
+        }
+
+        t.test("panicWipe with no replacement key falls back to loud plaintext, never a dead key") { t in
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
+            defer { try? FileManager.default.removeItem(at: url) }
+            let store = HistoryStore(path: url.path,
+                                     cipher: HistoryCipher(key: SymmetricKey(size: .bits256)),
+                                     destroyKey: {},
+                                     rotateKey: { nil })
+            store.record(raw: "pre", cleaned: "pre", appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expect(!store.panicWipe(), "rekey failure reported to the caller")
+            store.record(raw: "degraded-after-wipe", cleaned: "degraded-after-wipe",
+                         appBundleID: nil, durationMs: 1, pasteOK: true)
+            // Keyless store on relaunch reads it fine: it landed as plaintext
+            // (the healable degraded posture), NOT as ciphertext under the
+            // destroyed key (unrecoverable).
+            let relaunched = HistoryStore(path: url.path, cipher: nil)
+            t.expectEqual(relaunched.recent().first?.cleanedText ?? "MISSING", "degraded-after-wipe",
+                          "post-wipe row stored plaintext, not sealed with the destroyed key")
         }
 
         t.test("wrong key yields the unreadable marker, not garbage") { t in

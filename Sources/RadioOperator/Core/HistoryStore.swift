@@ -30,8 +30,13 @@ final class HistoryStore: @unchecked Sendable {
     }()
 
     private var db: OpaquePointer?
-    private let cipher: HistoryCipher?
+    /// Queue-guarded: only read/written inside `queue` blocks. It is a `var`
+    /// solely so `panicWipe()` can swap in a freshly rotated key in place —
+    /// without that, every dictation recorded between a wipe and the next
+    /// relaunch would be sealed with the destroyed key and silently lost.
+    private var cipher: HistoryCipher?
     private let keyDestroyer: () -> Void
+    private let keyRotator: () -> HistoryCipher?
     private let dbPath: String
     private let queue = DispatchQueue(label: "com.warroom.radiooperator.history")
 
@@ -39,11 +44,22 @@ final class HistoryStore: @unchecked Sendable {
     /// injected key (no Keychain access in the unit tier). `destroyKey` is the
     /// panic-wipe's key-erase action; it defaults to the production Keychain
     /// delete but is overridden to a no-op in tests so `make test` can never
-    /// touch the real key.
+    /// touch the real key. `rotateKey` creates the replacement key right after
+    /// the wipe; its default carries the same `--run-tests` backstop as
+    /// `HistoryCipher.destroyKey` so a test that forgets to inject it can never
+    /// read or create the production key.
     init(path: String, cipher: HistoryCipher? = nil,
-         destroyKey: @escaping () -> Void = { _ = HistoryCipher.destroyKey() }) {
+         destroyKey: @escaping () -> Void = { _ = HistoryCipher.destroyKey() },
+         rotateKey: @escaping () -> HistoryCipher? = {
+             guard !CommandLine.arguments.contains("--run-tests") else {
+                 NSLog("HistoryStore: key rotation refused under --run-tests")
+                 return nil
+             }
+             return HistoryCipher.loadOrCreate()
+         }) {
         self.cipher = cipher
         self.keyDestroyer = destroyKey
+        self.keyRotator = rotateKey
         self.dbPath = path
         queue.sync {
             guard sqlite3_open(path, &db) == SQLITE_OK else {
@@ -362,15 +378,31 @@ final class HistoryStore: @unchecked Sendable {
     }
 
     /// Cryptographic erase of all dictation content: destroys the Keychain key
-    /// (so any lingering ciphertext anywhere is permanently unrecoverable) and
-    /// clears the table. Confirmation must be gated by the caller. The key-erase
-    /// is injected (see init) so tests never touch the production Keychain.
-    func panicWipe() {
+    /// (so any lingering ciphertext anywhere is permanently unrecoverable),
+    /// clears the table, and rotates a FRESH key into place — all atomically
+    /// behind the serial queue, so a dictation racing the wipe can never be
+    /// sealed with the doomed key, and everything recorded after the wipe stays
+    /// readable without a relaunch. Confirmation must be gated by the caller.
+    /// The key-erase and key-rotation are injected (see init) so tests never
+    /// touch the production Keychain.
+    ///
+    /// Returns true when the replacement key is in place. False means the
+    /// Keychain was unavailable: the store falls back to LOUD plaintext (same
+    /// degraded posture as a keyless open — never ciphertext under a dead key)
+    /// and the idempotent open-time sweep re-encrypts those rows on the next
+    /// launch that has a key.
+    @discardableResult
+    func panicWipe() -> Bool {
         queue.sync {
             exec("DELETE FROM dictations")
             exec("VACUUM")
+            keyDestroyer()
+            cipher = keyRotator()
+            if cipher == nil {
+                NSLog("HistoryStore: panic wipe could not create a replacement key — recording in PLAINTEXT until a key is available")
+            }
+            return cipher != nil
         }
-        keyDestroyer()
     }
 
     /// Total dictation rows (uncapped, for the Privacy "Your data" readout).

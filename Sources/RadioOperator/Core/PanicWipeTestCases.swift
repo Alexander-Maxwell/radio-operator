@@ -62,14 +62,19 @@ enum PanicWipeTestCases {
             var keyErased = false
             let store = HistoryStore(path: dbURL.path,
                                      cipher: HistoryCipher(key: SymmetricKey(size: .bits256)),
-                                     destroyKey: { keyErased = true })
+                                     destroyKey: { keyErased = true },
+                                     rotateKey: { HistoryCipher(key: SymmetricKey(size: .bits256)) })
             store.record(raw: "secret", cleaned: "secret", appBundleID: nil, durationMs: 1, pasteOK: true)
 
-            // Default scope: history gone, key erased, notes intact.
-            PanicWipe.execute(plan: PanicWipe.plan(alsoDeleteNotesAndAudio: false, notesRoot: tmp),
-                              history: store)
+            // Default scope: history gone, key erased + rotated, notes intact.
+            let rekeyed = PanicWipe.execute(plan: PanicWipe.plan(alsoDeleteNotesAndAudio: false, notesRoot: tmp),
+                                            history: store)
+            t.expect(rekeyed, "execute reports the fresh key is active")
             t.expectEqual(store.recent().count, 0, "history emptied")
             t.expect(keyErased, "key destroyer invoked")
+            store.record(raw: "post-wipe", cleaned: "post-wipe", appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expectEqual(store.recent().first?.cleanedText ?? "MISSING", "post-wipe",
+                          "post-wipe dictations readable — key rotated in place, no relaunch needed")
             t.expect(fm.fileExists(atPath: meetings.appendingPathComponent("m.md").path),
                      "notes survive the default scope")
 

@@ -46,13 +46,21 @@ enum PanicWipe {
 
     /// Runs the plan. Blocking (DELETE + VACUUM + file removals) — call it
     /// off the main thread. The store is injected so tests use a throwaway
-    /// db with a no-op key destroyer.
-    static func execute(plan: Plan, history: HistoryStore) {
+    /// db with a no-op key destroyer and an injected key rotator.
+    ///
+    /// Returns true when a fresh encryption key is active after the wipe
+    /// (HistoryStore.panicWipe rotates the key in place, so post-wipe
+    /// dictations are sealed with the new key — no relaunch needed). False
+    /// means the Keychain was unavailable and the store said so loudly.
+    @discardableResult
+    static func execute(plan: Plan, history: HistoryStore) -> Bool {
+        var rekeyed = true
         if plan.eraseHistoryAndKey {
-            history.panicWipe()
+            rekeyed = history.panicWipe()
         }
         for folder in plan.foldersToClear {
             clearContents(of: folder)
         }
+        return rekeyed
     }
 }

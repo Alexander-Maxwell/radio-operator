@@ -1016,11 +1016,14 @@ private struct PrivacyPane: View {
         let includedNotes = panicIncludeNotes
         panicStatus = "Wiping…"
         Task.detached(priority: .userInitiated) {
-            PanicWipe.execute(plan: plan, history: HistoryStore.shared)
+            let rekeyed = PanicWipe.execute(plan: plan, history: HistoryStore.shared)
             await MainActor.run {
-                panicStatus = includedNotes
-                    ? "History, key, notes, and audio wiped. Relaunch to create a fresh encryption key."
-                    : "History and key wiped. Relaunch to create a fresh encryption key."
+                let scope = includedNotes
+                    ? "History, key, notes, and audio wiped."
+                    : "History and key wiped."
+                panicStatus = rekeyed
+                    ? scope + " A fresh encryption key is active."
+                    : scope + " Keychain unavailable — new dictations are UNENCRYPTED until it returns."
                 loadFootprint()
             }
         }
