@@ -92,6 +92,51 @@ final class ClaudeService: @unchecked Sendable {
 
     var cliAvailable: Bool { cliPath() != nil }
 
+    // MARK: - CLI auth (so the ribbon shows amber when the CLI can't sign in)
+
+    private let authLock = NSLock()
+    private var authOKCache = true          // optimistic; first probe corrects it in ~1s
+    private var authProbedAt = Date.distantPast
+
+    /// Whether the CLI is signed in (`claude auth status` → loggedIn). Cheap for
+    /// callers: returns the cached value and re-probes on a background thread at
+    /// most once every 20s. Being logged out is the difference between the ribbon
+    /// showing "Ready" and a silent 401 on the next Ask.
+    func cliAuthOK() -> Bool {
+        authLock.lock()
+        let cached = authOKCache
+        let due = Date().timeIntervalSince(authProbedAt) > 20
+        if due { authProbedAt = Date() }    // claim the slot to avoid a probe stampede
+        authLock.unlock()
+        if due {
+            let cli = cliPath()
+            Task.detached { [weak self] in
+                let ok = ClaudeService.probeAuthStatus(cli: cli)
+                self?.authLock.lock(); self?.authOKCache = ok; self?.authLock.unlock()
+            }
+        }
+        return cached
+    }
+
+    /// Runs `claude auth status` and reports whether it shows a live session.
+    nonisolated static func probeAuthStatus(cli: String?) -> Bool {
+        guard let cli else { return false }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: cli)
+        proc.arguments = ["auth", "status"]
+        var env = ProcessInfo.processInfo.environment
+        let cliDir = (cli as NSString).deletingLastPathComponent
+        env["PATH"] = "\(cliDir):/usr/local/bin:/opt/homebrew/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
+        proc.environment = env
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = Pipe()
+        guard (try? proc.run()) != nil else { return false }
+        proc.waitUntilExit()
+        let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return out.contains("\"loggedIn\": true") || out.contains("\"loggedIn\":true")
+    }
+
     // MARK: - Public operations
 
     /// Generates the meeting summary block. Returns markdown starting at
@@ -388,7 +433,13 @@ final class ClaudeService: @unchecked Sendable {
                         continuation.resume(returning: trimmed)
                     }
                 } else {
-                    continuation.resume(throwing: ClaudeError.nonzeroExit(p.terminationStatus, err))
+                    // claude prints its failures (e.g. a 401) to stdout, not
+                    // stderr — surface whichever stream carries the message so
+                    // the error is never a blank "exit 1".
+                    let e = err.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let o = out.trimmingCharacters(in: .whitespacesAndNewlines)
+                    continuation.resume(throwing:
+                        ClaudeError.nonzeroExit(p.terminationStatus, e.isEmpty ? o : e))
                 }
             }
 

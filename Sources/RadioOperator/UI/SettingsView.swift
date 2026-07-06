@@ -70,7 +70,7 @@ final class PermissionHealth: ObservableObject {
         systemAudio = Permissions.systemAudioLikelyGranted
         let s = SettingsStore.shared
         claudeReady = s.data.claudeMode == .cli
-            ? (ClaudeService.shared.cliPath() != nil)
+            ? (ClaudeService.shared.cliPath() != nil && ClaudeService.shared.cliAuthOK())
             : ((s.apiKey ?? "").isEmpty == false)
     }
 
@@ -188,7 +188,7 @@ private struct StatusRibbon: View {
                 boolChip("SYS AUDIO", health.systemAudio) {
                     Permissions.openSettings(pane: Permissions.audioCapturePane)
                 }
-                boolChip("CLAUDE", health.claudeReady) { navigate(.intelligence) }
+                boolChip("CLAUDE", health.claudeReady, fixLabel: "Sign in") { navigate(.intelligence) }
             }
             .padding(.horizontal, 14).padding(.vertical, 9)
         }
@@ -202,9 +202,10 @@ private struct StatusRibbon: View {
     }
 
     @ViewBuilder
-    private func boolChip(_ key: String, _ ok: Bool, fix: @escaping () -> Void) -> some View {
+    private func boolChip(_ key: String, _ ok: Bool, fixLabel: String = "Fix",
+                          fix: @escaping () -> Void) -> some View {
         RibbonChip(key: key, color: ok ? .green : .orange, ok: ok,
-                   value: "Ready", onFix: fix)
+                   value: "Ready", fixLabel: fixLabel, onFix: fix)
     }
 
     private func lampColor(_ s: Permissions.Status) -> Color {
@@ -238,6 +239,7 @@ private struct RibbonChip: View {
     let color: Color
     let ok: Bool
     let value: String
+    var fixLabel: String = "Fix"
     var onFix: (() -> Void)? = nil
 
     var body: some View {
@@ -249,7 +251,7 @@ private struct RibbonChip: View {
             if ok {
                 Text(value).font(.system(size: 10.5)).foregroundStyle(.tertiary)
             } else if let onFix {
-                Button("Fix", action: onFix)
+                Button(fixLabel, action: onFix)
                     .buttonStyle(.borderedProminent).controlSize(.mini).tint(.orange)
             }
         }
@@ -682,9 +684,15 @@ private struct IntelligencePane: View {
     @ViewBuilder private var cliStatus: some View {
         HStack(spacing: 8) {
             if let path = ClaudeService.shared.cliPath() {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                Text("CLI found · \(path)").font(.system(size: 11.5, design: .monospaced))
-                    .lineLimit(1).truncationMode(.middle)
+                if ClaudeService.shared.cliAuthOK() {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("CLI found · \(path)").font(.system(size: 11.5, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text("CLI found but signed out — run  claude auth login  in Terminal, then Retry.")
+                        .font(.system(size: 11.5)).textSelection(.enabled)
+                }
             } else {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                 Text("claude CLI not found — install Claude Code or switch to API mode.")
