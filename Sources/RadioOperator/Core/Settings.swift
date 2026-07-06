@@ -151,8 +151,9 @@ struct SettingsData: Codable, Sendable {
     var micEchoCancellation: Bool = true
     /// BCP-47 identifier for the transcription language. No picker UI yet
     /// (D3: English-only for now) — parameterized so the engine isn't
-    /// hardcoded and a future picker is pure UI.
-    var transcriptionLocaleIdentifier: String = "en_US"
+    /// hardcoded and a future picker is pure UI. The default lives in ONE
+    /// place: `Transcriber.defaultLocale`.
+    var transcriptionLocaleIdentifier: String = Transcriber.defaultLocale.identifier
 
     /// The resolved transcription locale.
     var transcriptionLocale: Locale { Locale(identifier: transcriptionLocaleIdentifier) }

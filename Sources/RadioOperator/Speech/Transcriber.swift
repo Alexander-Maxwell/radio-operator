@@ -28,13 +28,17 @@ final class Transcriber: TranscriptionEngine, @unchecked Sendable {
         inputContinuation = continuation
     }
 
+    /// The one place the English default lives (D3: English-only for now;
+    /// locale stays parameterized so a future picker is pure UI).
+    static let defaultLocale = Locale(identifier: "en_US")
+
     /// The analyzer's preferred input format for this machine, cached per
     /// locale so hot-path sessions don't pay for the query. Lock-guarded:
     /// dictation and meetings can race the first fill.
     private static let formatCacheLock = NSLock()
     private static var cachedFormats: [String: AVAudioFormat] = [:]
 
-    static func preferredFormat(locale: Locale = Locale(identifier: "en_US")) async -> AVAudioFormat? {
+    static func preferredFormat(locale: Locale = Transcriber.defaultLocale) async -> AVAudioFormat? {
         let key = locale.identifier
         formatCacheLock.lock()
         if let cached = cachedFormats[key] {
@@ -57,7 +61,7 @@ final class Transcriber: TranscriptionEngine, @unchecked Sendable {
 
     /// Ensures the on-device model for the locale is installed (no-op when,
     /// as on this machine, English is preinstalled).
-    static func ensureModel(locale: Locale = Locale(identifier: "en_US")) async throws {
+    static func ensureModel(locale: Locale = Transcriber.defaultLocale) async throws {
         let probe = SpeechTranscriber(locale: locale,
                                       transcriptionOptions: [],
                                       reportingOptions: [],
@@ -67,7 +71,7 @@ final class Transcriber: TranscriptionEngine, @unchecked Sendable {
         }
     }
 
-    func start(locale: Locale = Locale(identifier: "en_US")) async throws {
+    func start(locale: Locale = Transcriber.defaultLocale) async throws {
         let transcriber = SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],

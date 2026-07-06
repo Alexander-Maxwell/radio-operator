@@ -111,7 +111,7 @@ enum ProbeRunner {
             let audioURL = clip.audio.hasPrefix("/")
                 ? URL(fileURLWithPath: clip.audio)
                 : manifestDir.appendingPathComponent(clip.audio)
-            let locale = Locale(identifier: clip.locale ?? "en_US")
+            let locale = clip.locale.map { Locale(identifier: $0) } ?? Transcriber.defaultLocale
             guard let hypothesis = await transcribeFile(path: audioURL.path, locale: locale,
                                                         verbose: false) else {
                 print("CLIP \(clip.audio): TRANSCRIPTION FAILED")
@@ -204,7 +204,7 @@ enum ProbeRunner {
     /// live event stream (the classic --probe-transcribe behavior); the WER
     /// probe runs quiet.
     @discardableResult
-    static func transcribeFile(path: String, locale: Locale = Locale(identifier: "en_US"),
+    static func transcribeFile(path: String, locale: Locale = Transcriber.defaultLocale,
                                verbose: Bool = true) async -> String? {
         do {
             guard let format = await Transcriber.preferredFormat(locale: locale) else {
