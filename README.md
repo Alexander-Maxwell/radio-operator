@@ -111,6 +111,45 @@ iCloud Drive — or your Obsidian vault synced by any means — and meetings +
 dictation logs sync across machines with zero configuration. The dictation
 history database and settings stay local to each Mac.
 
+## MCP server
+
+The same binary doubles as a local, read-only [MCP](https://modelcontextprotocol.io)
+stdio server, so Claude Code / Claude Desktop can search your dictation history
+and read your meeting notes — zero network egress, zero extra installs, nothing
+writable. Register it with Claude Code:
+
+```bash
+claude mcp add radio-operator -- "/Applications/Radio Operator.app/Contents/MacOS/RadioOperator" --mcp
+```
+
+Or in Claude Desktop's `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "radio-operator": {
+      "command": "/Applications/Radio Operator.app/Contents/MacOS/RadioOperator",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+Tools (read-only by design — see docs/plans/uplift-plan.md, decision D7):
+
+| Tool | What it returns |
+|---|---|
+| `search_dictations` | dictation history matching a substring (decrypted in-process; the history DB stays AES-GCM encrypted at rest) |
+| `list_meetings` | meeting notes with filename, title, date, duration, summary status |
+| `get_note` | the full markdown of one meeting note |
+
+Notes: `get_note` is jailed to the Meetings folder (absolute paths, `..`,
+nested paths, and symlink escapes are rejected). The subprocess is headless —
+no menu bar icon, no permission prompts — and reads the same settings.json
+and history database as the app (SQLite `busy_timeout` makes sharing safe).
+If the login Keychain is locked, history searches return a clear error
+instead of falling back to plaintext.
+
 ## Probes
 
 Headless checks that need no permissions:
