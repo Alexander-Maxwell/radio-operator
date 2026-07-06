@@ -158,6 +158,22 @@ struct SettingsData: Codable, Sendable {
     /// The resolved transcription locale.
     var transcriptionLocale: Locale { Locale(identifier: transcriptionLocaleIdentifier) }
 
+    /// Hold-to-command key for Command Mode (D6b: single hold modifier,
+    /// default Fn). A collision with the dictation hold key resolves to off —
+    /// one physical key must never drive two state machines.
+    var commandHotkey: HoldHotkey = .fn
+
+    /// The Command Mode key that is actually armed. Pure so the collision
+    /// rule is unit-testable.
+    static func resolvedCommandHotkey(command: HoldHotkey,
+                                      dictation: HoldHotkey) -> HoldHotkey {
+        command == dictation ? .off : command
+    }
+
+    var resolvedCommandHotkey: HoldHotkey {
+        SettingsData.resolvedCommandHotkey(command: commandHotkey, dictation: holdHotkey)
+    }
+
     static var defaultNotesFolder: String {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents/Radio Operator").path
@@ -189,6 +205,7 @@ struct SettingsData: Codable, Sendable {
         case autoSummarize, appearance, summaryTemplate
         case transcriptionLocaleIdentifier
         case autoStartOnMic, micEchoCancellation
+        case commandHotkey
     }
 
     init(from decoder: Decoder) throws {
@@ -216,6 +233,7 @@ struct SettingsData: Codable, Sendable {
             ?? d.transcriptionLocaleIdentifier
         autoStartOnMic = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartOnMic)) ?? d.autoStartOnMic
         micEchoCancellation = (try? c.decodeIfPresent(Bool.self, forKey: .micEchoCancellation)) ?? d.micEchoCancellation
+        commandHotkey = (try? c.decodeIfPresent(HoldHotkey.self, forKey: .commandHotkey)) ?? d.commandHotkey
     }
 }
 

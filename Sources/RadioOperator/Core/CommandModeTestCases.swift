@@ -48,6 +48,27 @@ enum CommandModeTestCases {
                           "empty copy → insert")
         }
 
+        t.test("command hotkey collision resolves to off") { t in
+            t.expectEqual(SettingsData.resolvedCommandHotkey(command: .fn, dictation: .rightCommand),
+                          .fn, "no collision passes through")
+            t.expectEqual(SettingsData.resolvedCommandHotkey(command: .rightCommand, dictation: .rightCommand),
+                          .off, "collision disables Command Mode")
+            t.expectEqual(SettingsData.resolvedCommandHotkey(command: .fn, dictation: .fn),
+                          .off, "fn collision disables")
+            t.expectEqual(SettingsData.resolvedCommandHotkey(command: .off, dictation: .rightCommand),
+                          .off, "off stays off")
+        }
+
+        t.test("old settings.json decodes with commandHotkey default") { t in
+            let old = Data(#"{"holdHotkey":"rightCommand","cleanupLevel":"light"}"#.utf8)
+            let decoded = try? JSONDecoder().decode(SettingsData.self, from: old)
+            t.expectEqual(decoded?.commandHotkey, .fn, "missing key falls back to Fn")
+            t.expectEqual(decoded?.holdHotkey, .rightCommand, "present keys still decode")
+            let new = Data(#"{"commandHotkey":"rightOption"}"#.utf8)
+            t.expectEqual((try? JSONDecoder().decode(SettingsData.self, from: new))?.commandHotkey,
+                          .rightOption, "present commandHotkey decodes")
+        }
+
         t.test("stripFences variants") { t in
             t.expectEqual(ClaudeService.stripFences("```\nhello\n```"), "hello", "plain fence")
             t.expectEqual(ClaudeService.stripFences("```swift\nlet x = 1\n```"),

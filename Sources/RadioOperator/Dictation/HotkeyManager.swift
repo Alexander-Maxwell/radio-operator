@@ -18,7 +18,18 @@ final class HotkeyManager {
     private var eventTap: CFMachPort?
     private var tapRunLoopSource: CFRunLoopSource?
 
-    private var hotkey: HoldHotkey { SettingsStore.shared.data.holdHotkey }
+    /// Which hold key this instance listens for, resolved on every flags
+    /// event so settings changes apply live. Defaults to the dictation hold
+    /// key; Command Mode passes its own (collision-resolved) key. Same
+    /// per-event lookup as before — dictation key timing is untouched.
+    private let hotkeyProvider: @MainActor () -> HoldHotkey
+
+    init(hotkeyProvider: @escaping @MainActor () -> HoldHotkey =
+            { SettingsStore.shared.data.holdHotkey }) {
+        self.hotkeyProvider = hotkeyProvider
+    }
+
+    private var hotkey: HoldHotkey { hotkeyProvider() }
 
     func start() {
         installFlagsMonitors()
