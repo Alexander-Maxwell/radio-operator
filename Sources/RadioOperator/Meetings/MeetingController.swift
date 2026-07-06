@@ -101,8 +101,9 @@ final class MeetingController: ObservableObject {
     }
 
     private func startPipelines(start: Date) async {
-        guard let format = await Transcriber.preferredFormat() else {
-            failStart("Speech model unavailable.")
+        let locale = SettingsStore.shared.data.transcriptionLocale
+        guard let format = await Transcriber.preferredFormat(locale: locale) else {
+            failStart("Speech model unavailable for \(locale.identifier).")
             return
         }
 
@@ -163,11 +164,11 @@ final class MeetingController: ObservableObject {
             UserDefaults.standard.set(false, forKey: "systemAudioPermissionSeen")
         }
 
-        do { try await mic.start() } catch {
+        do { try await mic.start(locale: locale) } catch {
             channelFailed(.me, message: error.localizedDescription)
         }
         if !AppState.shared.meetingDegradedNoTap {
-            do { try await system.start() } catch {
+            do { try await system.start(locale: locale) } catch {
                 channelFailed(.them, message: error.localizedDescription)
             }
         }

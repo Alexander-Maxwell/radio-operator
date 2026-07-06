@@ -319,7 +319,10 @@ final class ClaudeService: @unchecked Sendable {
         if mode == .api, let key = await MainActor.run(body: { SettingsStore.shared.apiKey }) {
             return try await runAPI(prompt: prompt, model: apiModel, key: key)
         }
-        return try await runCLI(prompt: prompt, cwd: nil, allowedTools: nil, timeout: timeout)
+        // Summaries and titles are pure text transforms — scope the CLI to the
+        // same read-only tool set as Ask so the subprocess never inherits
+        // claude's default Write/Bash/WebFetch surface.
+        return try await runCLI(prompt: prompt, cwd: nil, allowedTools: "Read,Grep,Glob", timeout: timeout)
     }
 
     /// Wraps Process so the task-cancellation handler can reach it across

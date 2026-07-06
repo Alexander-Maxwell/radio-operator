@@ -27,18 +27,30 @@ final class Transcriber: @unchecked Sendable {
         inputContinuation = continuation
     }
 
-    /// The analyzer's preferred input format for this machine/locale. Cached
-    /// after first query so hot-path sessions don't pay for it.
-    private static var cachedFormat: AVAudioFormat?
+    /// The analyzer's preferred input format for this machine, cached per
+    /// locale so hot-path sessions don't pay for the query. Lock-guarded:
+    /// dictation and meetings can race the first fill.
+    private static let formatCacheLock = NSLock()
+    private static var cachedFormats: [String: AVAudioFormat] = [:]
 
-    static func preferredFormat() async -> AVAudioFormat? {
-        if let cachedFormat { return cachedFormat }
-        let probe = SpeechTranscriber(locale: Locale(identifier: "en_US"),
+    static func preferredFormat(locale: Locale = Locale(identifier: "en_US")) async -> AVAudioFormat? {
+        let key = locale.identifier
+        formatCacheLock.lock()
+        if let cached = cachedFormats[key] {
+            formatCacheLock.unlock()
+            return cached
+        }
+        formatCacheLock.unlock()
+        let probe = SpeechTranscriber(locale: locale,
                                       transcriptionOptions: [],
                                       reportingOptions: [.volatileResults],
                                       attributeOptions: [])
         let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [probe])
-        cachedFormat = format
+        if let format {
+            formatCacheLock.lock()
+            cachedFormats[key] = format
+            formatCacheLock.unlock()
+        }
         return format
     }
 

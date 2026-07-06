@@ -155,7 +155,7 @@ struct HubView: View {
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
             }
             .padding(.top, 8)
-            Text("Radio Operator 0.2.0")
+            Text("Radio Operator 0.3.0")
                 .font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
         }
         .padding(12)

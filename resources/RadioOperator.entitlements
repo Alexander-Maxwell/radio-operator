@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Least privilege under the hardened runtime. Everything else the app
+	     does (Accessibility paste, CGEvent tap, Core Audio process tap, app
+	     activation) is gated by TCC, not entitlements — keep this file minimal.
+	     No App Sandbox: it blocks the paste/tap/activation core (see README). -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>

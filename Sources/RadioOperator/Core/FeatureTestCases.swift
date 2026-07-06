@@ -1,13 +1,22 @@
 import Foundation
 import AppKit
+import CryptoKit
 
 /// Tests for the SQLite history store against a throwaway database file.
+/// Stores get an injected throwaway key — the unit tier never touches the
+/// Keychain — and run encrypted by default, matching production.
 enum HistoryStoreTestCases {
     static func run(_ t: TestContext) {
-        func makeStore() -> (HistoryStore, URL) {
+        func makeStore(cipher: HistoryCipher? = HistoryCipher(key: SymmetricKey(size: .bits256)))
+        -> (HistoryStore, URL) {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
-            return (HistoryStore(path: url.path), url)
+            return (HistoryStore(path: url.path, cipher: cipher), url)
+        }
+
+        func fileContains(_ url: URL, _ needle: String) -> Bool {
+            guard let bytes = try? Data(contentsOf: url) else { return false }
+            return bytes.range(of: Data(needle.utf8)) != nil
         }
 
         t.test("search matches raw and cleaned case-insensitively") { t in
@@ -22,8 +31,69 @@ enum HistoryStoreTestCases {
             t.expectEqual(store.search(query: "GOPUFF").count, 1, "case-insensitive cleaned match")
             t.expectEqual(store.search(query: "kinaxis").count, 1, "raw text match")
             t.expectEqual(store.search(query: "zzz-none").count, 0, "no match")
-            // Unescaped, a bare "%" LIKE-matches every row; escaped it matches none.
-            t.expectEqual(store.search(query: "%").count, 0, "LIKE wildcards escaped")
+            // In-memory matching treats former LIKE wildcards as literals.
+            t.expectEqual(store.search(query: "%").count, 0, "wildcards are literal")
+        }
+
+        t.test("history is encrypted at rest") { t in
+            let (store, url) = makeStore()
+            defer { try? FileManager.default.removeItem(at: url) }
+            let secret = "zebra-quantum-fig confidential launch date"
+            store.record(raw: secret, cleaned: secret,
+                         appBundleID: "com.apple.mail", durationMs: 700, pasteOK: true)
+            let rows = store.recent()
+            t.expectEqual(rows.first?.cleanedText ?? "", secret, "round-trips through decrypt")
+            t.expect(!fileContains(url, "zebra-quantum-fig"), "plaintext absent from the db file")
+        }
+
+        t.test("plaintext v0 database migrates to encrypted") { t in
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
+            defer { try? FileManager.default.removeItem(at: url) }
+            // Era 1: no key (legacy plaintext store).
+            var legacy: HistoryStore? = HistoryStore(path: url.path, cipher: nil)
+            legacy?.record(raw: "migrate-me-alpha", cleaned: "migrate-me-alpha",
+                           appBundleID: nil, durationMs: 1, pasteOK: true)
+            legacy?.record(raw: "migrate-me-beta", cleaned: "migrate-me-beta",
+                           appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expect(fileContains(url, "migrate-me-alpha"), "v0 file holds plaintext")
+            legacy = nil // close the first connection before migrating
+
+            // Era 2: key appears; open migrates + vacuums the plaintext away.
+            let store = HistoryStore(path: url.path,
+                                     cipher: HistoryCipher(key: SymmetricKey(size: .bits256)))
+            let rows = store.recent()
+            t.expectEqual(rows.count, 2, "both rows survive migration")
+            t.expect(rows.contains { $0.cleanedText == "migrate-me-alpha" }, "content readable after migration")
+            t.expect(!fileContains(url, "migrate-me-alpha"), "plaintext destroyed by migration VACUUM")
+            t.expectEqual(store.search(query: "beta").count, 1, "search works over migrated rows")
+        }
+
+        t.test("deleteAll leaves no recoverable plaintext") { t in
+            // Plaintext-mode store: proves secure_delete + VACUUM scrub freed
+            // pages even without encryption in front.
+            let (store, url) = makeStore(cipher: nil)
+            defer { try? FileManager.default.removeItem(at: url) }
+            store.record(raw: "shred-target-omega", cleaned: "shred-target-omega",
+                         appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expect(fileContains(url, "shred-target-omega"), "plaintext present before delete")
+            store.deleteAll()
+            t.expectEqual(store.recent().count, 0, "table empty")
+            t.expect(!fileContains(url, "shred-target-omega"), "bytes scrubbed after deleteAll")
+        }
+
+        t.test("wrong key yields the unreadable marker, not garbage") { t in
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
+            defer { try? FileManager.default.removeItem(at: url) }
+            var writer: HistoryStore? = HistoryStore(
+                path: url.path, cipher: HistoryCipher(key: SymmetricKey(size: .bits256)))
+            writer?.record(raw: "sealed", cleaned: "sealed", appBundleID: nil, durationMs: 1, pasteOK: true)
+            writer = nil
+            let reader = HistoryStore(path: url.path,
+                                      cipher: HistoryCipher(key: SymmetricKey(size: .bits256)))
+            t.expectEqual(reader.recent().first?.cleanedText ?? "",
+                          HistoryCipher.unreadableMarker, "marker shown for undecryptable rows")
         }
 
         t.test("prune removes only old rows") { t in
@@ -174,6 +244,7 @@ enum MiscFeatureTestCases {
             t.expectEqual(d.autoSummarize, true, "autoSummarize defaults on")
             t.expectEqual(d.appearance, .system, "appearance defaults to system")
             t.expect(d.summaryTemplate.contains("## Summary"), "summary template defaulted")
+            t.expectEqual(d.transcriptionLocaleIdentifier, "en_US", "transcription locale defaults to en_US")
         }
 
         t.test("settings round-trip preserves new fields") { t in

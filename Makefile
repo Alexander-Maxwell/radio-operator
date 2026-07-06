@@ -1,4 +1,4 @@
-.PHONY: build test probe probe-ask app run install clean reset-tcc
+.PHONY: build test probe probe-ask probe-wer app run install release clean reset-tcc
 
 build:
 	swift build
@@ -14,6 +14,11 @@ probe: build
 probe-ask: build
 	.build/debug/RadioOperator --probe-ask
 
+# Accuracy benchmark over a labeled clip set (JSON manifest of
+# {audio, reference, locale?}). The number that gates engine decisions.
+probe-wer: build
+	@echo "usage: .build/debug/RadioOperator --probe-wer <manifest.json>"
+
 app:
 	bash scripts/bundle.sh
 
@@ -24,6 +29,11 @@ install: app
 	rm -rf "/Applications/Radio Operator.app"
 	cp -R "build/Radio Operator.app" "/Applications/Radio Operator.app"
 	@echo "Installed /Applications/Radio Operator.app"
+
+# Distribution build: bundle, then notarize + staple (no-ops with guidance
+# until a Developer ID identity exists — see scripts/notarize.sh).
+release: app
+	bash scripts/notarize.sh
 
 # Recovery: clear stale TCC grants after a re-signed rebuild stops responding.
 reset-tcc:

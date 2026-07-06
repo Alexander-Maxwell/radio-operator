@@ -141,6 +141,13 @@ struct SettingsData: Codable, Sendable {
     var micDeviceUID: String? = nil
     var historyRetention: HistoryRetention = .keep
     var launchAtLogin: Bool = false
+    /// BCP-47 identifier for the transcription language. No picker UI yet
+    /// (D3: English-only for now) — parameterized so the engine isn't
+    /// hardcoded and a future picker is pure UI.
+    var transcriptionLocaleIdentifier: String = "en_US"
+
+    /// The resolved transcription locale.
+    var transcriptionLocale: Locale { Locale(identifier: transcriptionLocaleIdentifier) }
 
     static var defaultNotesFolder: String {
         FileManager.default.homeDirectoryForCurrentUser
@@ -171,6 +178,7 @@ struct SettingsData: Codable, Sendable {
         case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
         case autoSummarize, appearance, summaryTemplate
+        case transcriptionLocaleIdentifier
     }
 
     init(from decoder: Decoder) throws {
@@ -194,6 +202,8 @@ struct SettingsData: Codable, Sendable {
         autoSummarize = (try? c.decodeIfPresent(Bool.self, forKey: .autoSummarize)) ?? d.autoSummarize
         appearance = (try? c.decodeIfPresent(AppearanceMode.self, forKey: .appearance)) ?? d.appearance
         summaryTemplate = (try? c.decodeIfPresent(String.self, forKey: .summaryTemplate)) ?? d.summaryTemplate
+        transcriptionLocaleIdentifier = (try? c.decodeIfPresent(String.self, forKey: .transcriptionLocaleIdentifier))
+            ?? d.transcriptionLocaleIdentifier
     }
 }
 
@@ -286,6 +296,9 @@ final class SettingsStore: ObservableObject {
             }
             var add = base
             add[kSecValueData as String] = Data(newValue.utf8)
+            // Device-bound and unlocked-only: the key is read on user-initiated
+            // requests, never in the background, and must not iCloud-sync.
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
             SecItemAdd(add as CFDictionary, nil)
             objectWillChange.send()
         }

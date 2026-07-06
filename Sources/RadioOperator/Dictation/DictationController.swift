@@ -160,12 +160,15 @@ final class DictationController {
             }
         }
 
+        // Resolve the language on the MainActor before the task hops off it.
+        let locale = SettingsStore.shared.data.transcriptionLocale
+
         startTask = Task { [weak self] in
             guard let self else { return }
             do {
-                guard let format = await Transcriber.preferredFormat() else {
+                guard let format = await Transcriber.preferredFormat(locale: locale) else {
                     throw NSError(domain: "Radio Operator", code: 2, userInfo: [
-                        NSLocalizedDescriptionKey: "Speech model unavailable for English."])
+                        NSLocalizedDescriptionKey: "Speech model unavailable for \(locale.identifier)."])
                 }
                 // Mic first so buffers queue into the transcriber's input
                 // stream while the analyzer spins up.
@@ -178,7 +181,7 @@ final class DictationController {
                     self.micToken = token
                     if self.state == .starting { self.state = .recording }
                 }
-                try await transcriber.start()
+                try await transcriber.start(locale: locale)
                 // If the user released during startup, run the stop path now.
                 await MainActor.run {
                     if self.stopRequested {

@@ -55,7 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Pre-warm the speech format query so the first hotkey press is fast.
-        Task.detached { _ = await Transcriber.preferredFormat() }
+        let prewarmLocale = SettingsStore.shared.data.transcriptionLocale
+        Task.detached { _ = await Transcriber.preferredFormat(locale: prewarmLocale) }
 
         // Library empty-state "Start a Meeting" button.
         NotificationCenter.default.addObserver(

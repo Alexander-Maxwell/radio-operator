@@ -42,6 +42,7 @@ enum TestRunner {
         NotesStoreTestCases.run(t)
         HistoryStoreTestCases.run(t)
         MiscFeatureTestCases.run(t)
+        WordErrorRateTestCases.run(t)
         print("PASSED: \(t.passed)")
         if t.failures.isEmpty {
             print("ALL TESTS PASSED")

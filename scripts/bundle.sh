@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 swift build -c release
 
 APP="build/Radio Operator.app"
@@ -53,13 +53,35 @@ if [ -f resources/RadioOperator.icns ]; then
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string RadioOperator" "$APP/Contents/Info.plist" 2>/dev/null || true
 fi
 
-# Prefer a stable self-signed identity if one exists (keeps TCC grants across
-# rebuilds); fall back to ad-hoc.
-IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Radio Operator Dev[^"]*"' | head -1 | tr -d '"' || true)"
+# Sign with the hardened runtime + least-privilege entitlements everywhere,
+# so the dev build exercises the exact runtime posture a notarized release
+# ships with. Identity preference: Developer ID (distribution) → stable
+# self-signed "Radio Operator Dev" (keeps TCC grants across rebuilds) → ad-hoc.
+ENTITLEMENTS="resources/RadioOperator.entitlements"
+IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Developer ID Application[^"]*"' | head -1 | tr -d '"' || true)"
+if [ -z "$IDENTITY" ]; then
+  IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Radio Operator Dev[^"]*"' | head -1 | tr -d '"' || true)"
+fi
 if [ -n "$IDENTITY" ]; then
-  codesign --force --sign "$IDENTITY" "$APP"
+  case "$IDENTITY" in
+    "Developer ID Application"*) TIMESTAMP="--timestamp" ;;
+    *)                           TIMESTAMP="" ;;  # timestamp service rejects self-signed certs
+  esac
+  codesign --force --options runtime $TIMESTAMP --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
 else
-  codesign --force --sign - "$APP"
+  codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - "$APP"
 fi
 
-echo "Built $APP"
+# Hygiene assertion: the shipped binary carries exactly the two expected
+# entitlements — a stray addition fails the build here, not in a review.
+GRANTED="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || echo '{}')"
+for KEY in com.apple.security.device.audio-input com.apple.security.automation.apple-events; do
+  echo "$GRANTED" | grep -q "$KEY" || { echo "ENTITLEMENT MISSING: $KEY"; exit 1; }
+done
+UNEXPECTED="$(echo "$GRANTED" | tr '{},' '\n' | grep -o '"com\.apple\.security\.[^"]*"' \
+  | grep -v 'device\.audio-input' | grep -v 'automation\.apple-events' || true)"
+if [ -n "$UNEXPECTED" ]; then
+  echo "UNEXPECTED ENTITLEMENTS: $UNEXPECTED"; exit 1
+fi
+
+echo "Built $APP (signed: ${IDENTITY:-ad-hoc}, hardened runtime on)"

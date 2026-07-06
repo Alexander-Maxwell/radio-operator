@@ -48,19 +48,52 @@ If dictation stops responding right after granting, relaunch the app
 (onboarding offers a button). `make reset-tcc` clears stale grants after
 rebuilds.
 
-### Optional: stable code-signing identity
+### Signing, hardened runtime, and (optional) notarization
 
-Builds are ad-hoc signed by default, which resets TCC grants on every rebuild.
-For a stable identity, trust the generated "Radio Operator Dev" certificate once
-(GUI password prompt):
+Every build signs with the **hardened runtime** and the minimal entitlements in
+`resources/RadioOperator.entitlements` (exactly `device.audio-input` +
+`automation.apple-events` — the paste, event-tap, and process-tap machinery is
+gated by TCC, not entitlements, so nothing else is needed). `bundle.sh` asserts
+this stays true and fails the build on any unexpected entitlement.
+
+Identity preference: **Developer ID Application** (if enrolled) → the stable
+self-signed **"Radio Operator Dev"** certificate (keeps TCC grants across
+rebuilds; trust it once via `security add-trusted-cert`) → ad-hoc.
+
+To distribute Gatekeeper-clean builds to other people, enroll in the Apple
+Developer Program, then:
 
 ```bash
-security add-trusted-cert -r trustRoot -p codeSign \
-  /private/tmp/.../adj_cert.pem   # or re-create: see scripts/bundle.sh
+make release   # bundle → notarytool submit → staple → verify
 ```
 
-`scripts/bundle.sh` automatically prefers the "Radio Operator Dev" identity when it
-is valid.
+Without a Developer ID identity, `make release` explains and exits cleanly.
+
+### Why no App Sandbox
+
+The sandbox blocks the app's core mechanics: posting synthetic ⌘V (CGEvent),
+the recording-scoped key tap, activating the target app, and the Core Audio
+process tap. Compensating controls: hardened runtime ON, least-privilege
+entitlements (asserted at build), on-device speech, single network egress
+(opt-in API mode only), history encrypted at rest, keys in Keychain.
+
+## Data at rest
+
+- **Dictation history** (`history.sqlite`) is **AES-256-GCM encrypted** per
+  column; the key lives in the login Keychain, device-only. Deleting the key is
+  a cryptographic erase. `PRAGMA secure_delete` is on, and Clear History
+  VACUUMs, so cleared rows aren't recoverable from the file.
+- **Meeting notes and dictation logs** in `~/Documents/Radio Operator` are
+  **plain markdown by design** — they're yours, they're Obsidian-compatible,
+  and Ask's CLI mode greps them directly. FileVault covers them at rest.
+  (Deliberate trade-off; see docs/plans/uplift-plan.md, decision D5.)
+
+## Sync across Macs
+
+The notes folder is repointable (Settings → General). Point it at a folder in
+iCloud Drive — or your Obsidian vault synced by any means — and meetings +
+dictation logs sync across machines with zero configuration. The dictation
+history database and settings stay local to each Mac.
 
 ## Probes
 
@@ -69,6 +102,14 @@ Headless checks that need no permissions:
 ```bash
 .build/debug/RadioOperator --run-tests                      # unit tests
 .build/debug/RadioOperator --probe-transcribe test.aiff     # full STT pipeline on a file
+.build/debug/RadioOperator --probe-wer clips/manifest.json  # accuracy benchmark (WER/CER)
+```
+
+The WER manifest is a JSON array of labeled clips — the reproducible number
+that gates every transcription-engine decision:
+
+```json
+[{ "audio": "clip-01.aiff", "reference": "exactly what was said", "locale": "en_US" }]
 ```
 
 ## Architecture (one paragraph)
