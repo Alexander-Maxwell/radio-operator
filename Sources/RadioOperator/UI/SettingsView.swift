@@ -588,8 +588,18 @@ private struct MeetingsPane: View {
                     }
                     Divider()
                     SettingRow(title: "Auto-summarize on stop",
-                               desc: "Claude drafts Summary, Decisions, and Action Items when you end the meeting.") {
+                               desc: "Claude drafts Summary, Decisions, Action Items, and Follow-ups when you end the meeting.") {
                         Toggle("", isOn: $settings.data.autoSummarize).labelsHidden()
+                    }
+                    Divider()
+                    SettingRow(title: "Summary template",
+                               desc: "Which template the summary follows. Edit template contents in Intelligence.") {
+                        Picker("", selection: meetingTemplateBinding) {
+                            ForEach(settings.data.summaryTemplates) { tpl in
+                                Text(tpl.name).tag(Optional(tpl.id))
+                            }
+                        }
+                        .labelsHidden().frame(width: 200)
                     }
                     Divider()
                     SettingRow(title: "Echo guard",
@@ -615,6 +625,12 @@ private struct MeetingsPane: View {
                 }
             }
         }
+    }
+
+    private var meetingTemplateBinding: Binding<UUID?> {
+        Binding(
+            get: { settings.data.selectedTemplate?.id },
+            set: { settings.data.selectedTemplateID = $0 })
     }
 
     private func chooseFolder() {
@@ -675,20 +691,46 @@ private struct IntelligencePane: View {
                 }
             }
 
-            Card(title: "Summary template", hint: "what Claude produces on stop") {
+            Card(title: "Summary templates", hint: "what Claude produces on stop") {
                 VStack(alignment: .leading, spacing: 10) {
-                    TextEditor(text: $settings.data.summaryTemplate)
+                    HStack(spacing: 8) {
+                        Picker("", selection: selectedTemplateBinding) {
+                            ForEach(settings.data.summaryTemplates) { tpl in
+                                Text(tpl.name).tag(Optional(tpl.id))
+                            }
+                        }
+                        .labelsHidden().frame(width: 170)
+                        TextField("Name", text: templateNameBinding)
+                            .textFieldStyle(.roundedBorder).frame(width: 150)
+                        Spacer()
+                        Button {
+                            let tpl = NamedTemplate(name: "New template",
+                                                    body: SettingsData.defaultSummaryTemplate)
+                            settings.data.summaryTemplates.append(tpl)
+                            settings.data.selectedTemplateID = tpl.id
+                        } label: { Image(systemName: "plus") }
+                        .buttonStyle(.borderless).help("Add a template")
+                        Button {
+                            guard let sel = settings.data.selectedTemplate else { return }
+                            settings.data.summaryTemplates.removeAll { $0.id == sel.id }
+                            settings.data.selectedTemplateID = settings.data.summaryTemplates.first?.id
+                        } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                        .disabled(settings.data.summaryTemplates.count <= 1)
+                        .help("Delete this template")
+                    }
+                    TextEditor(text: templateBodyBinding)
                         .font(.system(size: 12, design: .monospaced)).frame(height: 150)
                         .scrollContentBackground(.hidden)
                         .padding(8)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
                     HStack {
-                        Text("Notes you jot during a meeting are treated as emphasis and marked ✍️.")
+                        Text("Summaries use the selected template. Notes you jot during a meeting are treated as emphasis and marked ✍️.")
                             .font(.system(size: 11.5)).foregroundStyle(.secondary)
                         Spacer()
                         Button("Reset to default") {
-                            settings.data.summaryTemplate = SettingsData.defaultSummaryTemplate
+                            settings.data.setSelectedTemplateBody(SettingsData.defaultSummaryTemplate)
                         }
                     }
                 }
@@ -696,6 +738,26 @@ private struct IntelligencePane: View {
             }
         }
         .onAppear { apiKeyDraft = settings.apiKey ?? "" }
+    }
+
+    /// Selection resolves through the same rule summaries use (unknown/nil →
+    /// first), so the picker can never point at a template that isn't used.
+    private var selectedTemplateBinding: Binding<UUID?> {
+        Binding(
+            get: { settings.data.selectedTemplate?.id },
+            set: { settings.data.selectedTemplateID = $0 })
+    }
+
+    private var templateNameBinding: Binding<String> {
+        Binding(
+            get: { settings.data.selectedTemplate?.name ?? "" },
+            set: { settings.data.setSelectedTemplateName($0) })
+    }
+
+    private var templateBodyBinding: Binding<String> {
+        Binding(
+            get: { settings.data.selectedTemplate?.body ?? "" },
+            set: { settings.data.setSelectedTemplateBody($0) })
     }
 
     @ViewBuilder private var cliStatus: some View {

@@ -153,7 +153,7 @@ final class ClaudeService: @unchecked Sendable {
     /// Generates the meeting summary block. Returns markdown starting at
     /// "## Summary".
     func summarize(transcriptMarkdown: String, title: String, userNotes: String = "") async throws -> String {
-        let template = await MainActor.run { SettingsStore.shared.data.summaryTemplate }
+        let template = await MainActor.run { SettingsStore.shared.data.activeSummaryTemplateBody }
         let prompt = ClaudeService.summaryPrompt(
             template: template, title: title, userNotes: userNotes, transcript: transcriptMarkdown)
         let out = try await run(prompt: prompt, timeout: 120)

@@ -364,7 +364,7 @@ enum MiscFeatureTestCases {
             t.expectEqual(d.echoGuardMode, .auto, "echoGuardMode defaults to auto")
             t.expectEqual(d.autoSummarize, true, "autoSummarize defaults on")
             t.expectEqual(d.appearance, .system, "appearance defaults to system")
-            t.expect(d.summaryTemplate.contains("## Summary"), "summary template defaulted")
+            t.expect(d.activeSummaryTemplateBody.contains("## Summary"), "summary template defaulted")
             t.expectEqual(d.transcriptionLocaleIdentifier, "en_US", "transcription locale defaults to en_US")
         }
 
@@ -373,7 +373,7 @@ enum MiscFeatureTestCases {
             s.echoGuardMode = .off
             s.autoSummarize = false
             s.appearance = .dark
-            s.summaryTemplate = "## Custom\n(x)"
+            s.setSelectedTemplateBody("## Custom\n(x)")
             s.transcriptionLocaleIdentifier = "de_DE"
             guard let data = try? JSONEncoder().encode(s),
                   let back = try? JSONDecoder().decode(SettingsData.self, from: data) else {
@@ -382,7 +382,7 @@ enum MiscFeatureTestCases {
             t.expectEqual(back.echoGuardMode, .off, "echo mode round-trips")
             t.expectEqual(back.autoSummarize, false, "autoSummarize round-trips")
             t.expectEqual(back.appearance, .dark, "appearance round-trips")
-            t.expectEqual(back.summaryTemplate, "## Custom\n(x)", "template round-trips")
+            t.expectEqual(back.activeSummaryTemplateBody, "## Custom\n(x)", "template round-trips")
             t.expectEqual(back.transcriptionLocaleIdentifier, "de_DE", "transcription locale round-trips")
         }
 

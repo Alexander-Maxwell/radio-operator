@@ -70,6 +70,21 @@ struct Snippet: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// A named meeting-summary template (the output spec Claude fills in).
+/// Generalizes the old single `summaryTemplate` string: the legacy field
+/// migrates into `templates[0]` "Default" on first decode.
+struct NamedTemplate: Codable, Identifiable, Hashable, Sendable {
+    var id: UUID
+    var name: String
+    var body: String
+
+    init(id: UUID = UUID(), name: String, body: String) {
+        self.id = id
+        self.name = name
+        self.body = body
+    }
+}
+
 enum ClaudeMode: String, Codable, CaseIterable, Sendable {
     case cli
     case api
@@ -136,7 +151,15 @@ struct SettingsData: Codable, Sendable {
     var echoGuardMode: EchoGuardMode = .auto
     var autoSummarize: Bool = true
     var appearance: AppearanceMode = .system
-    var summaryTemplate: String = SettingsData.defaultSummaryTemplate
+
+    /// Named summary templates. Never empty in practice: decode falls back to
+    /// one "Default" template, and the legacy single `summaryTemplate` string
+    /// migrates into `templates[0]`.
+    var summaryTemplates: [NamedTemplate] = [
+        NamedTemplate(name: "Default", body: SettingsData.defaultSummaryTemplate),
+    ]
+    /// Which template summaries use; nil or unknown resolves to the first.
+    var selectedTemplateID: UUID? = nil
     /// Persistent UID of the preferred input device; nil = system default.
     var micDeviceUID: String? = nil
     var historyRetention: HistoryRetention = .keep
@@ -180,9 +203,25 @@ struct SettingsData: Codable, Sendable {
     }
 
     /// The output spec Claude fills in for a meeting. Editable in Settings;
-    /// a blank template falls back to this. Kept identical to the original
-    /// hardcoded structure so existing behavior is unchanged by default.
+    /// a blank template falls back to this.
     static let defaultSummaryTemplate = """
+    ## Summary
+    (3-6 tight bullets of what the meeting covered)
+
+    ## Decisions
+    (bullets of decisions actually made; write "- None" if none)
+
+    ## Action Items
+    (checkboxes like "- [ ] task — owner, due date"; owner/due only if stated; write "- None" if none)
+
+    ## Follow-ups
+    (questions left open and things promised but not yet done; write "- None" if none)
+    """
+
+    /// The pre-0.3.0 default (no Follow-ups). A legacy `summaryTemplate` that
+    /// still equals this verbatim was never customized, so migration upgrades
+    /// it to the current default instead of freezing the old spec forever.
+    static let legacyDefaultSummaryTemplate = """
     ## Summary
     (3-6 tight bullets of what the meeting covered)
 
@@ -193,6 +232,40 @@ struct SettingsData: Codable, Sendable {
     (checkboxes like "- [ ] task — owner, due date"; owner/due only if stated; write "- None" if none)
     """
 
+    /// Pure selection rule: a known id wins, anything else falls back to the
+    /// first template (so a deleted selection can never orphan summaries).
+    static func selectedTemplate(in templates: [NamedTemplate], id: UUID?) -> NamedTemplate? {
+        if let id, let match = templates.first(where: { $0.id == id }) { return match }
+        return templates.first
+    }
+
+    var selectedTemplate: NamedTemplate? {
+        SettingsData.selectedTemplate(in: summaryTemplates, id: selectedTemplateID)
+    }
+
+    /// The template body summaries actually use. Blank/empty template lists
+    /// fall back to the built-in default so a summary is never spec-less.
+    var activeSummaryTemplateBody: String {
+        let body = selectedTemplate?.body ?? ""
+        return body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? SettingsData.defaultSummaryTemplate : body
+    }
+
+    mutating func setSelectedTemplateBody(_ body: String) {
+        guard let sel = selectedTemplate,
+              let idx = summaryTemplates.firstIndex(where: { $0.id == sel.id }) else {
+            summaryTemplates = [NamedTemplate(name: "Default", body: body)]
+            return
+        }
+        summaryTemplates[idx].body = body
+    }
+
+    mutating func setSelectedTemplateName(_ name: String) {
+        guard let sel = selectedTemplate,
+              let idx = summaryTemplates.firstIndex(where: { $0.id == sel.id }) else { return }
+        summaryTemplates[idx].name = name
+    }
+
     init() {}
 
     // Resilient decoding: missing keys fall back to defaults so settings
@@ -202,10 +275,15 @@ struct SettingsData: Codable, Sendable {
         case retainAudio, claudeMode, claudeCLIModel, apiModel
         case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
-        case autoSummarize, appearance, summaryTemplate
+        case autoSummarize, appearance, summaryTemplates, selectedTemplateID
         case transcriptionLocaleIdentifier
         case autoStartOnMic, micEchoCancellation
         case commandHotkey
+    }
+
+    /// Decode-only keys from retired schema versions (never re-encoded).
+    private enum LegacyKeys: String, CodingKey {
+        case summaryTemplate
     }
 
     init(from decoder: Decoder) throws {
@@ -228,7 +306,23 @@ struct SettingsData: Codable, Sendable {
         launchAtLogin = (try? c.decodeIfPresent(Bool.self, forKey: .launchAtLogin)) ?? d.launchAtLogin
         autoSummarize = (try? c.decodeIfPresent(Bool.self, forKey: .autoSummarize)) ?? d.autoSummarize
         appearance = (try? c.decodeIfPresent(AppearanceMode.self, forKey: .appearance)) ?? d.appearance
-        summaryTemplate = (try? c.decodeIfPresent(String.self, forKey: .summaryTemplate)) ?? d.summaryTemplate
+        // Templates, three eras: named list (current) → legacy single string
+        // (migrated into templates[0] "Default"; an uncustomized legacy
+        // default upgrades to the current default so it gains Follow-ups) →
+        // nothing (fresh default).
+        if let list = try? c.decodeIfPresent([NamedTemplate].self, forKey: .summaryTemplates),
+           !list.isEmpty {
+            summaryTemplates = list
+        } else if let legacyC = try? decoder.container(keyedBy: LegacyKeys.self),
+                  let old = try? legacyC.decodeIfPresent(String.self, forKey: .summaryTemplate),
+                  !old.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let body = old == SettingsData.legacyDefaultSummaryTemplate
+                ? SettingsData.defaultSummaryTemplate : old
+            summaryTemplates = [NamedTemplate(name: "Default", body: body)]
+        } else {
+            summaryTemplates = d.summaryTemplates
+        }
+        selectedTemplateID = (try? c.decodeIfPresent(UUID.self, forKey: .selectedTemplateID)) ?? nil
         transcriptionLocaleIdentifier = (try? c.decodeIfPresent(String.self, forKey: .transcriptionLocaleIdentifier))
             ?? d.transcriptionLocaleIdentifier
         autoStartOnMic = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartOnMic)) ?? d.autoStartOnMic

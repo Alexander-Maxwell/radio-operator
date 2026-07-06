@@ -53,6 +53,7 @@ enum TestRunner {
         ("Preflight", PreflightTestCases.run),
         ("Diagnostics", DiagnosticsTestCases.run),
         ("PanicWipe", PanicWipeTestCases.run),
+        ("Template", TemplateTestCases.run),
     ]
 
     /// Device tier: suites that need real hardware, TCC grants, or a signed-in
