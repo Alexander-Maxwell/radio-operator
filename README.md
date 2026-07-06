@@ -9,18 +9,33 @@ Granola (meeting notes) with one local-first, Claude-powered tool:
   in a floating pill (Apple's on-device SpeechAnalyzer — works in airplane mode,
   zero model downloads) and land at your cursor, cleaned deterministically
   (fillers, personal dictionary, snippets) with **no LLM latency in the hot path**.
+- **Command Mode** — hold Fn, speak an instruction ("make this shorter"),
+  release: the current selection is transformed in place (or, with nothing
+  selected, the result inserts at your cursor). One native ⌘Z undoes. Refuses
+  to run in terminals and secure-input fields; a **parallel** controller, so
+  dictation gains zero latency from it existing.
 - **Meetings** — one click captures your mic ("Me") *and* system audio ("Them",
   via a Core Audio process tap — no bot joins your call, works with Zoom, Meet,
   Teams, FaceTime, and in-person). Live transcript, crash-safe (the note is on
   disk from minute zero), and the moment you hit stop, **Claude writes the
-  summary, decisions, and action items automatically**.
+  summary, decisions, action items, and follow-ups automatically** — driven by
+  **named summary templates** you can add, edit, and switch per meeting type.
 - **Ask Radio Operator** — chat over everything you've dictated and every meeting
   you've captured, with file citations. Uses your existing Claude Code
   subscription via the `claude` CLI — **no API key, no account, no telemetry**.
   (Optional: add an Anthropic API key in Settings for lower latency.)
+- **Per-app writing styles** — rules keyed on the target app's bundle id shape
+  Command Mode output (formal in Mail, casual in Slack); opt-in for meeting
+  summaries; **never applied to dictation**, which stays deterministic.
 - **Your data is files** — meetings are plain markdown with YAML frontmatter in
   `~/Documents/Radio Operator` (point it at your Obsidian vault in Settings).
   Optional local audio retention (off by default).
+
+Also in the box: a **local read-only [MCP server](#mcp-server)** (this same
+binary; zero extra installs), a **[`radiooperator://` URL scheme](#url-scheme-automation)**
+for Shortcuts/Raycast automation, a first-run **System Check** (preflight)
+card in onboarding, **local-only diagnostics export**, and a
+confirmation-gated **[panic wipe](#data-at-rest)** (cryptographic erase).
 
 ## Build & install
 
@@ -35,7 +50,11 @@ open /Applications/Radio Operator.app
 
 ## First run — permissions
 
-Onboarding walks you through these; all are one-time grants:
+Onboarding opens with a **System Check** card — speech model present, the
+three permissions, Claude CLI found + signed in, notes folder writable, free
+disk — so a missing piece is visible up front instead of failing silently
+later (reopen it anytime via menu bar → Setup & Permissions…). All are
+one-time grants:
 
 | Permission | Why | When |
 |---|---|---|
@@ -91,11 +110,13 @@ turn off auto-summarize and skip Ask to keep everything on this Mac.
   your login password, never iCloud-synced (it is not hardware device-bound;
   it migrates with the keychain file). `PRAGMA secure_delete` is on, so Clear
   History zeroes each deleted cell in place and cleared rows aren't recoverable
-  from the file (no VACUUM needed on that path). Destroying the key
-  (`HistoryStore.panicWipe()`) is a cryptographic erase of all transcript
-  content. The one-time 0.3.0 encryption migration keeps a
-  `history.sqlite.pre-0.3.0-backup` snapshot until it succeeds, then deletes it. A confirmation-gated in-app control for this is planned
-  (see docs/plans/uplift-plan.md, decision D8).
+  from the file (no VACUUM needed on that path). **Panic wipe** (Settings →
+  Privacy & Data): a confirmation-gated cryptographic erase — clears the
+  database and destroys the Keychain key, so every encrypted transcript
+  anywhere becomes permanently unreadable; an explicit second checkbox
+  (default off) also deletes notes and audio files (D8). The one-time 0.3.0
+  encryption migration keeps a `history.sqlite.pre-0.3.0-backup` snapshot
+  until it succeeds, then deletes it.
 - **Meeting notes and dictation logs** in `~/Documents/Radio Operator` are
   **plain markdown by design** — they're yours, they're Obsidian-compatible,
   and Ask's CLI mode greps them directly. FileVault covers them at rest.
@@ -103,6 +124,11 @@ turn off auto-summarize and skip Ask to keep everything on this Mac.
 - **Upgrade is one-way:** after 0.3.0 first-launch migration, `history.sqlite`
   is unreadable by pre-0.3.0 builds (rows render as ciphertext). To roll back,
   restore a pre-upgrade copy of the database.
+- **Diagnostics are opt-in and local-only:** Settings → Privacy & Data →
+  Export Diagnostics… writes the last 24h of this app's own log lines
+  (subsystem-filtered, status messages only) to a file you choose. Dictation
+  content never reaches the log — enforced by `scripts/audit-logging.sh` in
+  CI — and nothing is ever transmitted.
 
 ## Sync across Macs
 
@@ -183,6 +209,8 @@ Headless checks that need no permissions:
 .build/debug/RadioOperator --run-tests                      # unit tests
 .build/debug/RadioOperator --probe-transcribe test.aiff     # full STT pipeline on a file
 .build/debug/RadioOperator --probe-wer clips/manifest.json  # accuracy benchmark (WER/CER)
+.build/debug/RadioOperator --probe-churn 40                 # session-teardown leak stress
+.build/debug/RadioOperator --probe-soak 300                 # held-session RSS soak (D9 verdict)
 ```
 
 The WER manifest is a JSON array of labeled clips — the reproducible number
