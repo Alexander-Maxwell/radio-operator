@@ -1,7 +1,7 @@
 # Radio Operator — Six-Area Uplift Plan
 
 **Version:** 1.0
-**Status:** Draft (planning complete, awaiting owner decisions)
+**Status:** Owner decisions D1–D10 locked 2026-07-06 — Phases 2–4 in execution. Distribution units parked (D1 = No).
 **Date:** 2026-07-06
 **Baseline:** v0.2.0, competitive scorecard vs Wispr Flow + OpenWhispr
 **Constraint:** Stay Mac-native (single Swift process + Apple SpeechAnalyzer primary). No Electron, no cross-platform rewrite. Preserve the security/privacy posture that scored highest.
@@ -128,7 +128,22 @@ Two cross-area collisions resolve cleanly:
 
 ---
 
-## Decisions for the owner (with recommendations)
+## Decisions locked by the owner (2026-07-06)
+
+| # | Locked answer |
+|---|---|
+| D1 | **No** Apple Developer Program. All distribution units — Developer ID, the notarization *run*, Sparkle SPM/EdDSA/appcast — are **parked** until the owner ever enrolls. Scaffolding already built (entitlements file, `scripts/notarize.sh`, hardened-runtime signing) stays in the tree, inert. The app remains personally signed ("Radio Operator Dev", TCC-stable). |
+| D2 | Floor **stays macOS 26**. `TranscriptionEngine` protocol lands as decoupling only. **No WhisperKit**, no 14.4 availability sweep, unless the WER harness someday proves Apple materially weaker. |
+| D3 | **English-only.** No language-picker UI, no multilingual corpus. Keep the cheap Unicode-correct formatting fix. |
+| D4 | Self-controlled domain — **recorded but inert while D1 = No**. |
+| D5 | **DB-only encryption** (shipped). Notes/audio plaintext is an accepted, FileVault-covered gap. |
+| D6 | Command Mode v1: (a) selection **and** empty-selection insert; (b) single hold modifier, default **Fn**; (c) **refuse** in secure-input and terminal apps. |
+| D7 | MCP **read-only** — `search_dictations` / `list_meetings` / `get_note`; **`ask` deferred**. Zero new dependencies. |
+| D8 | Panic-wipe: **DB + Keychain cryptographic-erase by default**; notes/audio deletion as an explicit second checkbox. |
+| D9 | Soak leak threshold: fail only on **>50% RSS growth after warm-up, sampled 3–5×**. |
+| D10 | **No self-hosted runner.** Core test tier on hosted macOS-26 CI; device tier stays a manual pre-release checklist. |
+
+## Original decision table (context — superseded by the locked answers above)
 
 | # | Decision | Recommendation |
 |---|---|---|
