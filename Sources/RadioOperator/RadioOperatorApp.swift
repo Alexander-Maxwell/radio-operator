@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static func main() {
         if TestRunner.handleIfRequested() { return }
         if ProbeRunner.handleIfRequested() { return }
+        if MCPRunner.handleIfRequested() { return }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
