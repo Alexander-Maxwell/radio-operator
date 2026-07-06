@@ -33,19 +33,43 @@ final class TestContext {
 }
 
 enum TestRunner {
+    /// Core tier: deterministic, offline, no hardware/TCC/network. Runs on
+    /// every `--run-tests` invocation and is the whole CI merge gate (D10).
+    static let coreSuites: [(name: String, run: (TestContext) -> Void)] = [
+        ("CleanupEngine", CleanupEngineTestCases.run),
+        ("TranscriptAssembler", TranscriptAssemblerTestCases.run),
+        ("NotesStore", NotesStoreTestCases.run),
+        ("HistoryStore", HistoryStoreTestCases.run),
+        ("MiscFeature", MiscFeatureTestCases.run),
+        ("WordErrorRate", WordErrorRateTestCases.run),
+        ("MCP", MCPTestCases.run),
+        ("CommandMode", CommandModeTestCases.run),
+        ("URLCommand", URLCommandTestCases.run),
+    ]
+
+    /// Device tier: suites that need real hardware, TCC grants, or a signed-in
+    /// Claude CLI. Empty today — those checks live in the manual probes
+    /// (`--probe-*`, see docs/device-checklist.md). Skipped by `--core-only`.
+    static let deviceSuites: [(name: String, run: (TestContext) -> Void)] = []
+
     /// Returns true if tests were requested and run (caller exits).
     static func handleIfRequested() -> Bool {
-        guard CommandLine.arguments.contains("--run-tests") else { return false }
+        let args = CommandLine.arguments
+        guard args.contains("--run-tests") else { return false }
+        let coreOnly = args.contains("--core-only")
         let t = TestContext()
-        CleanupEngineTestCases.run(t)
-        TranscriptAssemblerTestCases.run(t)
-        NotesStoreTestCases.run(t)
-        HistoryStoreTestCases.run(t)
-        MiscFeatureTestCases.run(t)
-        WordErrorRateTestCases.run(t)
-        MCPTestCases.run(t)
-        CommandModeTestCases.run(t)
-        URLCommandTestCases.run(t)
+        var suiteCounts: [String: Int] = [:]
+        var suites = coreSuites
+        if !coreOnly { suites += deviceSuites }
+        for suite in suites {
+            let before = t.passed
+            suite.run(t)
+            suiteCounts[suite.name] = t.passed - before
+        }
+        if let flagIndex = args.firstIndex(of: "--tests-json"), flagIndex + 1 < args.count {
+            writeJSON(to: args[flagIndex + 1], passed: t.passed,
+                      failures: t.failures, suites: suiteCounts)
+        }
         print("PASSED: \(t.passed)")
         if t.failures.isEmpty {
             print("ALL TESTS PASSED")
@@ -54,6 +78,27 @@ enum TestRunner {
             print("FAILED: \(t.failures.count)")
             for f in t.failures { print("  ✗ \(f)") }
             exit(1)
+        }
+    }
+
+    /// Machine-readable results for CI annotation / trend tracking:
+    /// `{passed, failures: [...], suites: {name: count}}`.
+    private static func writeJSON(to path: String, passed: Int,
+                                  failures: [String], suites: [String: Int]) {
+        let payload: [String: Any] = [
+            "passed": passed,
+            "failures": failures,
+            "suites": suites,
+        ]
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else {
+            print("tests-json: could not serialize results")
+            return
+        }
+        do {
+            try data.write(to: URL(fileURLWithPath: path))
+        } catch {
+            print("tests-json: could not write \(path): \(error.localizedDescription)")
         }
     }
 }

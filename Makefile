@@ -1,10 +1,21 @@
-.PHONY: build test probe probe-ask probe-wer app run install release clean reset-tcc
+.PHONY: build test test-core test-json probe probe-ask probe-wer app run install release clean reset-tcc
 
 build:
 	swift build
 
 test: build
 	.build/debug/RadioOperator --run-tests
+
+# CI merge gate (D10): deterministic/offline suites only — no hardware, TCC,
+# or network. Identical to `test` until a device-tier suite exists.
+test-core: build
+	.build/debug/RadioOperator --run-tests --core-only
+
+# Core tier plus machine-readable results at build/test-results.json
+# ({passed, failures, suites}).
+test-json: build
+	@mkdir -p build
+	.build/debug/RadioOperator --run-tests --core-only --tests-json build/test-results.json
 
 probe: build
 	@echo "usage: .build/debug/RadioOperator --probe-transcribe <audiofile>"
