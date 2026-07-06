@@ -425,6 +425,16 @@ private struct DictationPane: View {
                 }
             }
 
+            Card(title: "Command Mode", hint: "hold · speak · release") {
+                SettingRow(title: "Hold-to-command key", desc: commandKeyDesc) {
+                    Picker("", selection: $settings.data.commandHotkey) {
+                        ForEach(HoldHotkey.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    .labelsHidden().frame(width: 150)
+                    .onChange(of: settings.data.commandHotkey) { CommandController.shared.hotkeys.restart() }
+                }
+            }
+
             Card(title: "Microphone", hint: "input device") {
                 SettingRow(title: "Input device", desc: deviceWarning) {
                     HStack(spacing: 6) {
@@ -442,6 +452,13 @@ private struct DictationPane: View {
             }
             .onAppear { inputDevices = AudioInputDevices.list() }
         }
+    }
+
+    private var commandKeyDesc: String {
+        if settings.data.commandHotkey != .off, settings.data.resolvedCommandHotkey == .off {
+            return "This is already the hold-to-talk key — Command Mode stays off until they differ."
+        }
+        return "Hold, speak an instruction (“make this shorter”), release. The selection is transformed in place; with nothing selected the result lands at your cursor. ⌘Z undoes. Off in terminals and secure fields."
     }
 
     private var micBinding: Binding<String> {

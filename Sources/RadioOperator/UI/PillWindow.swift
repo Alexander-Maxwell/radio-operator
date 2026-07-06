@@ -68,9 +68,10 @@ struct PillView: View {
         return ""
     }
     /// Recording is the fully-live state; finalizing/pasting dim the wave.
+    /// Command Mode recording lights the wave the same way.
     private var isLive: Bool {
         if case .recording = state.dictationPhase { return true }
-        return false
+        return state.commandPhase == .recording
     }
 
     var body: some View {
@@ -86,6 +87,19 @@ struct PillView: View {
                             .foregroundStyle(Palette.live)
                             .font(.system(size: 13))
                         Text(errorMessage)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Palette.bone)
+                            .lineLimit(2)
+                            .frame(maxWidth: 275, alignment: .leading)
+                    }
+                } else if let notice = state.commandNotice {
+                    // Command Mode notice ("⌘Z to undo", refusals) reuses the
+                    // error slot geometry so the pill never grows.
+                    HStack(spacing: 6.5) {
+                        Image(systemName: "wand.and.stars")
+                            .foregroundStyle(Palette.od)
+                            .font(.system(size: 13))
+                        Text(notice)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Palette.bone)
                             .lineLimit(2)
@@ -111,7 +125,9 @@ struct PillView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 2)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(isError ? "Radio Operator: \(errorMessage)" : "Radio Operator listening")
+        .accessibilityLabel(isError
+            ? "Radio Operator: \(errorMessage)"
+            : "Radio Operator: \(state.commandNotice ?? "listening")")
     }
 }
 

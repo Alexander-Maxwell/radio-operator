@@ -48,6 +48,31 @@ enum CommandModeTestCases {
                           "empty copy → insert")
         }
 
+        t.test("begin decision refusal matrix (D6c)") { t in
+            typealias D = CommandController.BeginDecision
+            t.expectEqual(CommandController.beginDecision(
+                dictating: false, meeting: false, secureInput: false,
+                frontmostBundleID: "com.apple.Safari"), D.allow, "normal app allowed")
+            t.expectEqual(CommandController.beginDecision(
+                dictating: false, meeting: false, secureInput: false,
+                frontmostBundleID: nil), D.allow, "unknown frontmost allowed")
+            for term in ["com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp",
+                         "com.github.wez.wezterm", "io.alacritty", "net.kovidgoyal.kitty"] {
+                t.expect(CommandController.beginDecision(
+                    dictating: false, meeting: false, secureInput: false,
+                    frontmostBundleID: term) != .allow, "\(term) refused")
+            }
+            t.expect(CommandController.beginDecision(
+                dictating: true, meeting: false, secureInput: false,
+                frontmostBundleID: "com.apple.Safari") != .allow, "refused mid-dictation")
+            t.expect(CommandController.beginDecision(
+                dictating: false, meeting: true, secureInput: false,
+                frontmostBundleID: "com.apple.Safari") != .allow, "refused mid-meeting")
+            t.expect(CommandController.beginDecision(
+                dictating: false, meeting: false, secureInput: true,
+                frontmostBundleID: "com.apple.Safari") != .allow, "refused under secure input")
+        }
+
         t.test("command hotkey collision resolves to off") { t in
             t.expectEqual(SettingsData.resolvedCommandHotkey(command: .fn, dictation: .rightCommand),
                           .fn, "no collision passes through")

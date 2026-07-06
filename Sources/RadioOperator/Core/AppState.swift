@@ -22,6 +22,19 @@ final class AppState: ObservableObject {
     /// Hands-free session (double-tap lock): release doesn't stop recording.
     @Published var dictationLocked: Bool = false
 
+    // Command Mode (parallel controller; shares the pill with dictation)
+    enum CommandPhase: Equatable {
+        case idle
+        case capturing      // reading the selection
+        case recording      // hearing the instruction
+        case transforming   // Claude in flight
+        case pasting
+    }
+    @Published var commandPhase: CommandPhase = .idle
+    /// Transient pill notice ("⌘Z to undo", refusal reasons). Set and
+    /// auto-cleared by CommandController.
+    @Published var commandNotice: String? = nil
+
     // Meeting
     @Published var meetingActive: Bool = false
     @Published var meetingStartedAt: Date?

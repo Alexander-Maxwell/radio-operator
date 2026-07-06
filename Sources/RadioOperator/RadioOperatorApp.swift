@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
 
         DictationController.shared.startListening()
+        CommandController.shared.startListening()
 
         // Route capture to the user's chosen microphone (nil = system default).
         MicCapture.shared.preferredDeviceUID = SettingsStore.shared.data.micDeviceUID
@@ -209,12 +210,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Red while capturing is the load-bearing rule: color = live microphone.
+    /// Command Mode's instruction recording counts — its mic is just as hot.
     /// The glyph is the Radio Operator spade-signal mark (vector, template).
     static func icon(for state: AppState) -> NSImage? {
-        let capturing = state.meetingActive || {
-            if case .recording = state.dictationPhase { return true }
-            return false
-        }()
+        let capturing = state.meetingActive
+            || state.commandPhase == .recording
+            || {
+                if case .recording = state.dictationPhase { return true }
+                return false
+            }()
         return MenuBarIcon.image(capturing: capturing)
     }
 

@@ -48,6 +48,11 @@ final class DictationController {
         hotkeys.start()
     }
 
+    /// True anywhere between hotkey-down and paste/cancel. Read by Command
+    /// Mode's begin gate (a parallel controller — this property is the only
+    /// thing it touches here, and dictation never reads Command Mode state).
+    var isActive: Bool { state != .idle }
+
     /// Two hotkey presses inside this window mean "lock hands-free".
     nonisolated static func isDoubleTap(previousDown: Date?, now: Date) -> Bool {
         guard let previousDown else { return false }
