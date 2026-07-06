@@ -101,8 +101,15 @@ struct HistoryCipher: Sendable {
 
     /// Cryptographic erase: deletes the key so no encrypted row is ever
     /// recoverable. Returns true if the key is gone afterward.
+    ///
+    /// Hard backstop: refuses to run under `--run-tests` so a future unit test
+    /// can never delete the production key (the `make test` landmine).
     @discardableResult
     static func destroyKey() -> Bool {
+        guard !CommandLine.arguments.contains("--run-tests") else {
+            NSLog("HistoryCipher.destroyKey: refused under --run-tests")
+            return false
+        }
         let status = SecItemDelete(baseQuery as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }

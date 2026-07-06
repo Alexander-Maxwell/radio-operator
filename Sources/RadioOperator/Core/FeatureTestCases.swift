@@ -7,16 +7,26 @@ import CryptoKit
 /// Keychain — and run encrypted by default, matching production.
 enum HistoryStoreTestCases {
     static func run(_ t: TestContext) {
+        // Tests inject a no-op key-destroyer so panicWipe never touches the
+        // production Keychain.
         func makeStore(cipher: HistoryCipher? = HistoryCipher(key: SymmetricKey(size: .bits256)))
         -> (HistoryStore, URL) {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
-            return (HistoryStore(path: url.path, cipher: cipher), url)
+            return (HistoryStore(path: url.path, cipher: cipher, destroyKey: {}), url)
         }
 
+        /// Scans the whole SQLite on-disk footprint — main file plus any
+        /// -journal/-wal/-shm siblings — so a plaintext leak into a sibling can't
+        /// pass a main-file-only check.
         func fileContains(_ url: URL, _ needle: String) -> Bool {
-            guard let bytes = try? Data(contentsOf: url) else { return false }
-            return bytes.range(of: Data(needle.utf8)) != nil
+            let needleData = Data(needle.utf8)
+            for suffix in ["", "-journal", "-wal", "-shm"] {
+                let p = url.path + suffix
+                guard let bytes = try? Data(contentsOf: URL(fileURLWithPath: p)) else { continue }
+                if bytes.range(of: needleData) != nil { return true }
+            }
+            return false
         }
 
         t.test("search matches raw and cleaned case-insensitively") { t in
@@ -140,12 +150,18 @@ enum HistoryStoreTestCases {
             t.expectEqual(store.search(query: "会議").count, 1, "search matches multibyte")
         }
 
-        t.test("panicWipe empties the table") { t in
-            let (store, url) = makeStore()
+        t.test("panicWipe empties the table and erases the key (no production Keychain touch)") { t in
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
             defer { try? FileManager.default.removeItem(at: url) }
+            var erased = false
+            let store = HistoryStore(path: url.path,
+                                     cipher: HistoryCipher(key: SymmetricKey(size: .bits256)),
+                                     destroyKey: { erased = true })
             store.record(raw: "gone", cleaned: "gone", appBundleID: nil, durationMs: 1, pasteOK: true)
             store.panicWipe()
             t.expectEqual(store.recent().count, 0, "table emptied")
+            t.expect(erased, "key-erase invoked")
         }
 
         t.test("wrong key yields the unreadable marker, not garbage") { t in

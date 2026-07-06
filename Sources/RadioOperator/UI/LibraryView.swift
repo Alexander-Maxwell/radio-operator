@@ -148,12 +148,20 @@ private struct DictationHistoryList: View {
         settings.data.holdHotkey.displayName.replacingOccurrences(of: "Hold ", with: "")
     }
 
-    /// Synchronous reload for direct actions (delete, clear, appear) where the
-    /// working set is already the capped recent() view.
+    /// Reload off the MainActor. The first touch of HistoryStore.shared can run
+    /// the Keychain read + one-time encryption migration + VACUUM, so even the
+    /// non-search path must not run synchronously on the main thread. Results
+    /// publish back on the main actor.
     private func reload() {
         searchTask?.cancel()
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        records = q.isEmpty ? HistoryStore.shared.recent() : HistoryStore.shared.search(query: q)
+        searchTask = Task {
+            let rows = await Task.detached(priority: .userInitiated) {
+                q.isEmpty ? HistoryStore.shared.recent() : HistoryStore.shared.search(query: q)
+            }.value
+            if Task.isCancelled { return }
+            records = rows
+        }
     }
 
     /// Debounced, off-main reload for typing. search() AES-decrypts rows until

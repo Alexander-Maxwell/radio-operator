@@ -31,12 +31,18 @@ final class HistoryStore: @unchecked Sendable {
 
     private var db: OpaquePointer?
     private let cipher: HistoryCipher?
+    private let keyDestroyer: () -> Void
     private let queue = DispatchQueue(label: "com.warroom.radiooperator.history")
 
-    /// Internal (not private) so tests can run against a throwaway file with
-    /// an injected key (no Keychain access in the unit tier).
-    init(path: String, cipher: HistoryCipher? = nil) {
+    /// Internal (not private) so tests can run against a throwaway file with an
+    /// injected key (no Keychain access in the unit tier). `destroyKey` is the
+    /// panic-wipe's key-erase action; it defaults to the production Keychain
+    /// delete but is overridden to a no-op in tests so `make test` can never
+    /// touch the real key.
+    init(path: String, cipher: HistoryCipher? = nil,
+         destroyKey: @escaping () -> Void = { _ = HistoryCipher.destroyKey() }) {
         self.cipher = cipher
+        self.keyDestroyer = destroyKey
         queue.sync {
             guard sqlite3_open(path, &db) == SQLITE_OK else {
                 NSLog("HistoryStore: failed to open \(path)")
@@ -130,13 +136,18 @@ final class HistoryStore: @unchecked Sendable {
         }
         sqlite3_finalize(sel)
 
+        // Keep every plaintext pre-image off disk for the WHOLE migration —
+        // both the encrypt UPDATEs and the scrub VACUUM — by journaling to
+        // memory, not a sibling -journal file. Tradeoff: a crash during the
+        // COMMIT or VACUUM under MEMORY journaling can (per SQLite) leave the
+        // file corrupt, not merely stale. Recovery: if the file is still
+        // readable next open, the idempotent sweep re-runs (user_version is
+        // stamped only after VACUUM); if it is corrupt, restore a pre-upgrade
+        // copy of history.sqlite. FileVault is the compensating control for the
+        // residue this avoids. Acceptable for a one-time migration of a personal
+        // history db; do NOT use MEMORY journaling for steady-state writes.
+        exec("PRAGMA journal_mode=MEMORY")
         if !rows.isEmpty {
-            // Keep the plaintext pre-images off disk: the rollback journal would
-            // otherwise leave old page contents in unlinked blocks. MEMORY
-            // journaling trades crash-durability of this one migration for that
-            // guarantee; the sweep is idempotent, so a crash mid-migration simply
-            // retries next open.
-            exec("PRAGMA journal_mode=MEMORY")
             exec("BEGIN")
             var failed = false
             for (id, raw, cleaned) in rows {
@@ -164,17 +175,19 @@ final class HistoryStore: @unchecked Sendable {
                 return
             }
             exec("COMMIT")
-            exec("PRAGMA journal_mode=DELETE")
         }
 
         // Rewrite the file so freed pages holding plaintext (this sweep's, plus
         // any legacy pre-images from the v0.2.0 build's DELETE-journaled writes)
-        // are destroyed. Stamp user_version to 1 ONLY after VACUUM succeeds — so
-        // a crash between the COMMIT above and this VACUUM leaves version 0 and
-        // re-enters the scrub (via `schemaVersionLocked() < 1`) on the next open
-        // even though every row is already BLOB.
+        // are destroyed. Still under MEMORY journaling so VACUUM's own writeback
+        // journal never lands plaintext on disk. Stamp user_version to 1 ONLY
+        // after VACUUM succeeds — so a crash between the COMMIT above and this
+        // VACUUM leaves version 0 and re-enters the scrub (via
+        // `schemaVersionLocked() < 1`) on the next open even though every row is
+        // already BLOB.
         exec("VACUUM")
         exec("PRAGMA user_version = 1")
+        exec("PRAGMA journal_mode=DELETE")
     }
 
     // MARK: - Column encode/decode
@@ -311,13 +324,14 @@ final class HistoryStore: @unchecked Sendable {
 
     /// Cryptographic erase of all dictation content: destroys the Keychain key
     /// (so any lingering ciphertext anywhere is permanently unrecoverable) and
-    /// clears the table. Confirmation must be gated by the caller.
+    /// clears the table. Confirmation must be gated by the caller. The key-erase
+    /// is injected (see init) so tests never touch the production Keychain.
     func panicWipe() {
         queue.sync {
             exec("DELETE FROM dictations")
             exec("VACUUM")
         }
-        HistoryCipher.destroyKey()
+        keyDestroyer()
     }
 
     /// Total dictation rows (uncapped, for the Privacy "Your data" readout).
