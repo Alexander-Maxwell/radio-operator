@@ -729,6 +729,9 @@ private struct PrivacyPane: View {
     @State private var footprint = DataFootprint.Snapshot.empty
     @State private var confirmClear = false
     @State private var diagnosticsStatus: String?
+    @State private var confirmPanic = false
+    @State private var panicIncludeNotes = false
+    @State private var panicStatus: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -775,6 +778,40 @@ private struct PrivacyPane: View {
                         Button("Clear…", role: .destructive) { confirmClear = true }
                     }
                 }
+            }
+
+            Card(title: "Panic wipe", hint: "cryptographic erase · D8") {
+                VStack(spacing: 0) {
+                    SettingRow(title: "Panic Wipe…",
+                               desc: "Clears the history database and destroys its encryption key in your Keychain — every encrypted transcript anywhere becomes permanently unreadable. A fresh key is created at next launch.") {
+                        Button("Panic Wipe…", role: .destructive) { confirmPanic = true }
+                    }
+                    Divider()
+                    SettingRow(title: "Also delete notes and audio files",
+                               desc: "Off by default. When on, the wipe also empties Meetings, Dictations, and Audio — your markdown notes and any retained recordings.") {
+                        Toggle("", isOn: $panicIncludeNotes).labelsHidden()
+                    }
+                    if let panicStatus {
+                        Divider()
+                        Text(panicStatus)
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                    }
+                }
+            }
+            .confirmationDialog(
+                panicIncludeNotes
+                    ? "Erase dictation history AND delete all notes and audio?"
+                    : "Erase all dictation history?",
+                isPresented: $confirmPanic, titleVisibility: .visible
+            ) {
+                Button(panicIncludeNotes ? "Erase history, notes & audio" : "Erase history & key",
+                       role: .destructive) { runPanicWipe() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(panicIncludeNotes
+                    ? "The history database and its Keychain key are destroyed (nothing recoverable), and everything in Meetings, Dictations, and Audio is deleted. This cannot be undone."
+                    : "The history database and its Keychain key are destroyed — no transcript is recoverable, even from copies of the database. Notes and audio files are NOT touched. This cannot be undone.")
             }
 
             Card(title: "Diagnostics", hint: "local-only · never uploaded") {
@@ -879,6 +916,25 @@ private struct PrivacyPane: View {
             for f in files where f.pathExtension == "md" { try? FileManager.default.removeItem(at: f) }
         }
         loadFootprint()
+    }
+
+    /// Confirmation-gated D8 wipe. Blocking work (VACUUM, file removals)
+    /// runs off the main thread; the plan is resolved on the MainActor so
+    /// the notes root comes from live settings.
+    private func runPanicWipe() {
+        let plan = PanicWipe.plan(alsoDeleteNotesAndAudio: panicIncludeNotes,
+                                  notesRoot: settings.notesFolderURL)
+        let includedNotes = panicIncludeNotes
+        panicStatus = "Wiping…"
+        Task.detached(priority: .userInitiated) {
+            PanicWipe.execute(plan: plan, history: HistoryStore.shared)
+            await MainActor.run {
+                panicStatus = includedNotes
+                    ? "History, key, notes, and audio wiped. Relaunch to create a fresh encryption key."
+                    : "History and key wiped. Relaunch to create a fresh encryption key."
+                loadFootprint()
+            }
+        }
     }
 
     /// Opt-in, local-only: collect this process's app-emitted log entries for
