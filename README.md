@@ -89,10 +89,12 @@ turn off auto-summarize and skip Ask to keep everything on this Mac.
   bundle id, duration, paste result) stays plaintext. The key is a
   non-synchronizable generic password in the login Keychain — encrypted with
   your login password, never iCloud-synced (it is not hardware device-bound;
-  it migrates with the keychain file). `PRAGMA secure_delete` is on and Clear
-  History VACUUMs, so cleared rows aren't recoverable from the file. Destroying
-  the key (`HistoryStore.panicWipe()`) is a cryptographic erase of all
-  transcript content. A confirmation-gated in-app control for this is planned
+  it migrates with the keychain file). `PRAGMA secure_delete` is on, so Clear
+  History zeroes each deleted cell in place and cleared rows aren't recoverable
+  from the file (no VACUUM needed on that path). Destroying the key
+  (`HistoryStore.panicWipe()`) is a cryptographic erase of all transcript
+  content. The one-time 0.3.0 encryption migration keeps a
+  `history.sqlite.pre-0.3.0-backup` snapshot until it succeeds, then deletes it. A confirmation-gated in-app control for this is planned
   (see docs/plans/uplift-plan.md, decision D8).
 - **Meeting notes and dictation logs** in `~/Documents/Radio Operator` are
   **plain markdown by design** — they're yours, they're Obsidian-compatible,

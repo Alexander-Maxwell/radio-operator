@@ -32,6 +32,7 @@ final class HistoryStore: @unchecked Sendable {
     private var db: OpaquePointer?
     private let cipher: HistoryCipher?
     private let keyDestroyer: () -> Void
+    private let dbPath: String
     private let queue = DispatchQueue(label: "com.warroom.radiooperator.history")
 
     /// Internal (not private) so tests can run against a throwaway file with an
@@ -43,14 +44,15 @@ final class HistoryStore: @unchecked Sendable {
          destroyKey: @escaping () -> Void = { _ = HistoryCipher.destroyKey() }) {
         self.cipher = cipher
         self.keyDestroyer = destroyKey
+        self.dbPath = path
         queue.sync {
             guard sqlite3_open(path, &db) == SQLITE_OK else {
                 NSLog("HistoryStore: failed to open \(path)")
                 db = nil
                 return
             }
-            // Zero freed pages on delete so cleared rows aren't recoverable
-            // from the file. Cheap; VACUUM still runs after bulk deletes.
+            // Zero freed pages on delete so cleared rows aren't recoverable from
+            // the file in place — no VACUUM needed on the delete/prune paths.
             exec("PRAGMA secure_delete=ON")
             exec("""
                 CREATE TABLE IF NOT EXISTS dictations (
@@ -136,16 +138,31 @@ final class HistoryStore: @unchecked Sendable {
         }
         sqlite3_finalize(sel)
 
+        // Safety net: snapshot the DB before the destructive, corruption-capable
+        // migration below, so the "restore a pre-upgrade copy" recovery has a
+        // real source. The snapshot is the pre-migration file (plaintext for a
+        // v0.2.0 upgrader) — FileVault covers it, exactly like the notes/audio —
+        // and it is deleted the moment the migration succeeds. Left in place on
+        // failure/crash as the recovery copy. Safe to copy here: no transaction
+        // is active and journaling is still default DELETE.
+        let backupPath = dbPath + ".pre-0.3.0-backup"
+        try? FileManager.default.removeItem(atPath: backupPath) // clear a stale one
+        let backedUp = (try? FileManager.default.copyItem(atPath: dbPath, toPath: backupPath)) != nil
+        if !backedUp {
+            NSLog("HistoryStore: could not snapshot \(dbPath) before migration — proceeding without a backup")
+        }
+
         // Keep every plaintext pre-image off disk for the WHOLE migration —
         // both the encrypt UPDATEs and the scrub VACUUM — by journaling to
         // memory, not a sibling -journal file. Tradeoff: a crash during the
         // COMMIT or VACUUM under MEMORY journaling can (per SQLite) leave the
         // file corrupt, not merely stale. Recovery: if the file is still
         // readable next open, the idempotent sweep re-runs (user_version is
-        // stamped only after VACUUM); if it is corrupt, restore a pre-upgrade
-        // copy of history.sqlite. FileVault is the compensating control for the
-        // residue this avoids. Acceptable for a one-time migration of a personal
-        // history db; do NOT use MEMORY journaling for steady-state writes.
+        // stamped only after VACUUM); if it is corrupt, restore the
+        // `.pre-0.3.0-backup` snapshot written just above. FileVault is the
+        // compensating control for the residue this avoids. Acceptable for a
+        // one-time migration of a personal history db; do NOT use MEMORY
+        // journaling for steady-state writes.
         exec("PRAGMA journal_mode=MEMORY")
         if !rows.isEmpty {
             exec("BEGIN")
@@ -188,6 +205,13 @@ final class HistoryStore: @unchecked Sendable {
         exec("VACUUM")
         exec("PRAGMA user_version = 1")
         exec("PRAGMA journal_mode=DELETE")
+
+        // Migration succeeded and is durable — drop the pre-migration snapshot
+        // so a plaintext copy doesn't linger. (On failure/crash it stays, as the
+        // recovery source.)
+        if backedUp {
+            try? FileManager.default.removeItem(atPath: backupPath)
+        }
     }
 
     // MARK: - Column encode/decode
