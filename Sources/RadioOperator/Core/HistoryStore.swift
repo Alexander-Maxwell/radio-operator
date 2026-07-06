@@ -54,6 +54,10 @@ final class HistoryStore: @unchecked Sendable {
             // Zero freed pages on delete so cleared rows aren't recoverable from
             // the file in place — no VACUUM needed on the delete/prune paths.
             exec("PRAGMA secure_delete=ON")
+            // The GUI app and the `--mcp` subprocess can open this file
+            // concurrently. Wait briefly on the other process's write lock
+            // instead of failing instantly with SQLITE_BUSY.
+            exec("PRAGMA busy_timeout=5000")
             exec("""
                 CREATE TABLE IF NOT EXISTS dictations (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,

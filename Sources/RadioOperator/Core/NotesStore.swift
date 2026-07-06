@@ -59,8 +59,14 @@ final class NotesStore {
     }
 
     func listMeetings() -> [MeetingNoteMeta] {
+        NotesStore.listMeetings(in: meetingsFolder)
+    }
+
+    /// Nonisolated meetings listing so headless paths (the `--mcp` subprocess)
+    /// can enumerate notes without touching the MainActor-bound singletons.
+    nonisolated static func listMeetings(in folder: URL) -> [MeetingNoteMeta] {
         guard let files = try? FileManager.default.contentsOfDirectory(
-            at: meetingsFolder, includingPropertiesForKeys: [.contentModificationDateKey])
+            at: folder, includingPropertiesForKeys: [.contentModificationDateKey])
         else { return [] }
         var metas: [MeetingNoteMeta] = []
         for url in files where url.pathExtension == "md" {
