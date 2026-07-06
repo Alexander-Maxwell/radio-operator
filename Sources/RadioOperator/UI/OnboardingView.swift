@@ -16,6 +16,7 @@ struct OnboardingView: View {
     @State private var showRelaunchNote = false
     @State private var didInitialSnapshot = false
     @State private var testText = ""
+    @State private var preflight: PreflightReport?
 
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -23,6 +24,7 @@ struct OnboardingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
+                systemCheckSection
                 dictationSection
                 testArea
                 meetingsSection
@@ -33,6 +35,40 @@ struct OnboardingView: View {
         .frame(minWidth: 540, minHeight: 640)
         .onAppear(perform: refreshStatuses)
         .onReceive(poll) { _ in refreshStatuses() }
+    }
+
+    // MARK: - System Check (Preflight)
+
+    private var systemCheckSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("System Check")
+                    .font(.headline)
+                if let preflight {
+                    Text(preflight.hasFailure
+                         ? "needs attention"
+                         : (preflight.dictationReady ? "ready" : "almost ready"))
+                        .font(.caption)
+                        .foregroundStyle(preflight.hasFailure ? .red : .secondary)
+                }
+            }
+            VStack(spacing: 0) {
+                if let preflight {
+                    ForEach(preflight.checks) { check in
+                        SystemCheckRow(check: check)
+                        if check.id != preflight.checks.last?.id {
+                            Divider().padding(.leading, 12)
+                        }
+                    }
+                } else {
+                    Text("Checking…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(12)
+                }
+            }
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        }
     }
 
     // MARK: - Header
@@ -175,6 +211,9 @@ struct OnboardingView: View {
         axStatus = ax
         imStatus = im
         systemAudioGranted = Permissions.systemAudioLikelyGranted
+        Task { @MainActor in
+            preflight = await Preflight.run()
+        }
     }
 
     /// TCC grants only fully apply to a fresh process; re-open ourselves after
@@ -185,6 +224,38 @@ struct OnboardingView: View {
         proc.arguments = ["-c", "sleep 0.5; open \"\(Bundle.main.bundlePath)\""]
         try? proc.run()
         NSApp.terminate(nil)
+    }
+}
+
+/// One preflight check line in the System Check card, using the same
+/// glowing status-dot look as the hub's SIGNAL ribbon chips.
+private struct SystemCheckRow: View {
+    let check: PreflightReport.Check
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(color).frame(width: 8, height: 8)
+                .shadow(color: color.opacity(0.6), radius: 2.5)
+            Text(check.title)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 128, alignment: .leading)
+            Text(check.detail)
+                .font(.system(size: 11.5))
+                .foregroundStyle(check.isFail ? Color.primary : Color.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+    }
+
+    private var color: Color {
+        switch check.verdict {
+        case .pass: return .green
+        case .warn: return .orange
+        case .fail: return .red
+        }
     }
 }
 

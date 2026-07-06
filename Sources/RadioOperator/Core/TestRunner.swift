@@ -50,6 +50,7 @@ enum TestRunner {
         ("MicConvert", MicConvertTestCases.run),
         ("ClaudeService", ClaudeServiceTestCases.run),
         ("StressProbe", StressProbeTestCases.run),
+        ("Preflight", PreflightTestCases.run),
     ]
 
     /// Device tier: suites that need real hardware, TCC grants, or a signed-in
