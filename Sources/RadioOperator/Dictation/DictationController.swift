@@ -76,6 +76,33 @@ final class DictationController {
         return .ignore
     }
 
+    /// What finalize should do once the transcriber has drained, decided
+    /// purely from the observed session facts (same pattern as
+    /// `hotkeyDownAction`) so the edge transitions are unit-testable. A wrong
+    /// call here silently loses dictated text: `discardQuiet` on a timed-out
+    /// session hides the loss, `paste` on an empty cleanup pastes nothing.
+    enum FinalizeOutcome: Equatable {
+        /// Nothing worth pasting and nothing went wrong — dismiss silently.
+        case discardQuiet
+        /// Finalize timed out with no finals: the user spoke, the words are
+        /// gone. Must surface as an error, never a silent dismiss.
+        case errorTimeout
+        /// Clean the text, paste it, record history.
+        case paste
+    }
+
+    nonisolated static func finalizeOutcome(rawEmpty: Bool, finishedCleanly: Bool,
+                                            cleanedEmpty: Bool) -> FinalizeOutcome {
+        if rawEmpty {
+            // Nothing heard — dismiss quietly, unless the finalize timed out
+            // (words may be lost in the analyzer; that is an error, not silence).
+            return finishedCleanly ? .discardQuiet : .errorTimeout
+        }
+        // Heard something, but cleanup reduced it to nothing (pure filler).
+        if cleanedEmpty { return .discardQuiet }
+        return .paste
+    }
+
     // MARK: - Hotkey entry points
 
     func hotkeyDown() {
@@ -236,21 +263,19 @@ final class DictationController {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let durationMs = pressedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
 
-                if raw.isEmpty {
-                    // Nothing heard — dismiss quietly (finalize timeout with
-                    // no finals surfaces as an error instead).
-                    if !completed {
-                        self.failSession("Transcription timed out — nothing captured")
-                    } else {
-                        self.resetToIdle()
-                    }
+                // Cleanup only runs on non-empty raw (unchanged); the decision
+                // itself is the extracted pure static.
+                let cleaned = raw.isEmpty ? "" : CleanupEngine.clean(raw, settings: SettingsStore.shared.data)
+                switch DictationController.finalizeOutcome(
+                    rawEmpty: raw.isEmpty, finishedCleanly: completed, cleanedEmpty: cleaned.isEmpty) {
+                case .errorTimeout:
+                    self.failSession("Transcription timed out — nothing captured")
                     return
-                }
-
-                let cleaned = CleanupEngine.clean(raw, settings: SettingsStore.shared.data)
-                guard !cleaned.isEmpty else {
+                case .discardQuiet:
                     self.resetToIdle()
                     return
+                case .paste:
+                    break
                 }
 
                 self.state = .idle
