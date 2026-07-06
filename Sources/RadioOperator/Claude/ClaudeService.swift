@@ -43,15 +43,13 @@ final class ClaudeService: @unchecked Sendable {
     private var cachedCLIPath: String?
     private var discoveryDone = false
 
-    /// Resolve the `claude` binary once. Finder-launched apps get a minimal
-    /// PATH, so we check known locations and fall back to a login shell.
-    func cliPath() -> String? {
-        discoveryLock.lock()
-        defer { discoveryLock.unlock() }
-        if discoveryDone { return cachedCLIPath }
-        discoveryDone = true
-
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+    /// Ordered candidate locations for the `claude` binary under a given home
+    /// directory: the Claude Code local install first, then system package
+    /// managers, then nvm installs newest-version-first (plain string
+    /// descending on the version directory names). Pure apart from listing
+    /// the nvm directory, so the ordering — what strangers without Claude
+    /// installed actually hit — is unit-testable against a scratch home.
+    nonisolated static func cliCandidates(home: String) -> [String] {
         var candidates = [
             "\(home)/.claude/local/claude",
             "/opt/homebrew/bin/claude",
@@ -65,6 +63,19 @@ final class ClaudeService: @unchecked Sendable {
                 candidates.append("\(nvmVersions)/\(v)/bin/claude")
             }
         }
+        return candidates
+    }
+
+    /// Resolve the `claude` binary once. Finder-launched apps get a minimal
+    /// PATH, so we check known locations and fall back to a login shell.
+    func cliPath() -> String? {
+        discoveryLock.lock()
+        defer { discoveryLock.unlock() }
+        if discoveryDone { return cachedCLIPath }
+        discoveryDone = true
+
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = ClaudeService.cliCandidates(home: home)
         for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
             cachedCLIPath = path
             return path

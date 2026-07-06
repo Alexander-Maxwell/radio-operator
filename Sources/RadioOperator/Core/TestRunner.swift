@@ -48,6 +48,7 @@ enum TestRunner {
         ("PasteLogic", PasteLogicTestCases.run),
         ("DictationFinalize", DictationFinalizeTestCases.run),
         ("MicConvert", MicConvertTestCases.run),
+        ("ClaudeService", ClaudeServiceTestCases.run),
     ]
 
     /// Device tier: suites that need real hardware, TCC grants, or a signed-in
