@@ -728,6 +728,7 @@ private struct PrivacyPane: View {
     @ObservedObject var health: PermissionHealth
     @State private var footprint = DataFootprint.Snapshot.empty
     @State private var confirmClear = false
+    @State private var diagnosticsStatus: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -772,6 +773,21 @@ private struct PrivacyPane: View {
                     SettingRow(title: "Clear dictation history now",
                                desc: "Deletes the history database and dictation markdown. Meetings are untouched.") {
                         Button("Clear…", role: .destructive) { confirmClear = true }
+                    }
+                }
+            }
+
+            Card(title: "Diagnostics", hint: "local-only · never uploaded") {
+                VStack(spacing: 0) {
+                    SettingRow(title: "Export Diagnostics…",
+                               desc: "Writes the last 24 hours of this app's own log messages (status lines only — dictation content is never logged) to a file you choose. Nothing is transmitted; share it yourself if you want to.") {
+                        Button("Export…") { exportDiagnostics() }
+                    }
+                    if let diagnosticsStatus {
+                        Divider()
+                        Text(diagnosticsStatus)
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
                     }
                 }
             }
@@ -863,6 +879,28 @@ private struct PrivacyPane: View {
             for f in files where f.pathExtension == "md" { try? FileManager.default.removeItem(at: f) }
         }
         loadFootprint()
+    }
+
+    /// Opt-in, local-only: collect this process's app-emitted log entries for
+    /// the last 24h and write them wherever the user chooses. No network.
+    private func exportDiagnostics() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = DiagnosticsExport.suggestedFilename()
+        panel.title = "Export Diagnostics"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        diagnosticsStatus = "Collecting…"
+        Task.detached(priority: .userInitiated) {
+            let status: String
+            do {
+                let lines = try DiagnosticsExport.collect()
+                let rendered = DiagnosticsExport.render(lines: lines, generatedAt: Date())
+                try rendered.write(to: url, atomically: true, encoding: .utf8)
+                status = "Exported \(lines.count) log entries to \(url.lastPathComponent). Review before sharing."
+            } catch {
+                status = "Export failed: \(error.localizedDescription)"
+            }
+            await MainActor.run { diagnosticsStatus = status }
+        }
     }
 }
 

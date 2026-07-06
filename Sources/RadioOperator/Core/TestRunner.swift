@@ -51,6 +51,7 @@ enum TestRunner {
         ("ClaudeService", ClaudeServiceTestCases.run),
         ("StressProbe", StressProbeTestCases.run),
         ("Preflight", PreflightTestCases.run),
+        ("Diagnostics", DiagnosticsTestCases.run),
     ]
 
     /// Device tier: suites that need real hardware, TCC grants, or a signed-in
