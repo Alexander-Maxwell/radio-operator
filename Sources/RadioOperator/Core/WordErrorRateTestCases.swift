@@ -68,6 +68,31 @@ enum WordErrorRateTestCases {
             t.expect(cer.rate < 0.2, "CER far below WER")
         }
 
+        t.test("hyphenation is not an error") { t in
+            // "twenty-five" vs "twenty five" is a formatting choice, not a miss.
+            let s = WordErrorRate.score(reference: "twenty-five dollars", hypothesis: "twenty five dollars")
+            t.expectEqual(s.errors, 0, "hyphen split matches spaced words")
+            let slash = WordErrorRate.score(reference: "and/or", hypothesis: "and or")
+            t.expectEqual(slash.errors, 0, "slash split matches")
+        }
+
+        t.test("numerals compared as-is per documented policy") { t in
+            // Digits vs spelled-out numbers ARE counted (see normalize() note).
+            let s = WordErrorRate.score(reference: "25 dollars", hypothesis: "twenty five dollars")
+            t.expect(s.errors > 0, "digit vs words counts as error by policy")
+        }
+
+        t.test("character score handles long input without a full matrix") { t in
+            // Exercises the rolling-row path; correctness on a big string.
+            let a = String(repeating: "the quick brown fox ", count: 200)
+            let b = a + "extra"
+            let cer = WordErrorRate.characterScore(reference: a, hypothesis: b)
+            // Normalized: h == r + " extra" (a joins to no trailing space), so
+            // the distance is the 6 appended chars (space + "extra").
+            t.expectEqual(cer.errors, 6, "appended ' extra' = 6 char insertions")
+            t.expect(cer.referenceCount > 3000, "long reference counted")
+        }
+
         t.test("percent label is deterministic") { t in
             t.expectEqual(WordErrorRate.percent(0.25), "25.0%", "quarter")
             t.expectEqual(WordErrorRate.percent(0), "0.0%", "zero")

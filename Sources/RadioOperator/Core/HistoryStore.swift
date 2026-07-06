@@ -10,8 +10,13 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 /// ciphertext (BLOBs) when a `HistoryCipher` is present — the shared store
 /// always has one unless the Keychain itself is unavailable. Search decrypts
 /// in memory (ciphertext can't be LIKE-matched); a personal history is small
-/// enough that this stays instant. `PRAGMA user_version` 0 = plaintext legacy,
-/// 1 = encrypted; migration runs once at open and VACUUMs the plaintext away.
+/// enough that this stays instant. Any plaintext row (a legacy v0.2.0 db, or one
+/// written while the Keychain was unavailable) is re-encrypted at every open when
+/// a key is present — the sweep is idempotent and matches zero rows in steady
+/// state, so it can't strand plaintext in an "encrypted" database.
+///
+/// NOTE: metadata columns (ts, app_bundle_id, duration_ms, paste_ok) stay
+/// plaintext — only transcript content is encrypted. FileVault covers the rest.
 final class HistoryStore: @unchecked Sendable {
     static let shared: HistoryStore = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -70,35 +75,51 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    // MARK: - Plaintext → encrypted migration (runs once, on the queue)
+    // MARK: - Plaintext → encrypted sweep (idempotent, runs at every open)
 
-    private func schemaVersionLocked() -> Int32 {
-        var stmt: OpaquePointer?
-        defer { sqlite3_finalize(stmt) }
-        guard sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &stmt, nil) == SQLITE_OK,
-              sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
-        return sqlite3_column_int(stmt, 0)
-    }
-
+    /// Encrypts any plaintext (TEXT-typed) rows. Runs at open whenever a key is
+    /// present. Idempotent: the `typeof(raw)='text'` predicate matches zero rows
+    /// once everything is ciphertext, so the steady-state cost is a single
+    /// existence probe. Not gated on `user_version` — that would strand rows
+    /// written plaintext during a Keychain-unavailable session in a db already
+    /// stamped "encrypted".
     private func migrateLocked() {
-        guard let db, let cipher, schemaVersionLocked() < 1 else { return }
+        guard let db, let cipher else { return }
 
-        // Collect plaintext rows (typeof guard keeps this idempotent even if a
-        // previous migration was interrupted mid-write).
+        // Cheap existence probe first — the common (all-encrypted) case does no
+        // table scan and no VACUUM.
+        var probe: OpaquePointer?
+        var hasPlaintext = false
+        if sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1 FROM dictations WHERE typeof(raw) = 'text')",
+                              -1, &probe, nil) == SQLITE_OK, sqlite3_step(probe) == SQLITE_ROW {
+            hasPlaintext = sqlite3_column_int(probe, 0) == 1
+        }
+        sqlite3_finalize(probe)
+        guard hasPlaintext else { return }
+
+        // Collect plaintext rows.
         var rows: [(Int64, String, String)] = []
         var sel: OpaquePointer?
-        if sqlite3_prepare_v2(db, "SELECT id, raw, cleaned FROM dictations WHERE typeof(raw) = 'text'",
-                              -1, &sel, nil) == SQLITE_OK {
-            while sqlite3_step(sel) == SQLITE_ROW {
-                rows.append((
-                    sqlite3_column_int64(sel, 0),
-                    sqlite3_column_text(sel, 1).map { String(cString: $0) } ?? "",
-                    sqlite3_column_text(sel, 2).map { String(cString: $0) } ?? ""
-                ))
-            }
+        guard sqlite3_prepare_v2(db, "SELECT id, raw, cleaned FROM dictations WHERE typeof(raw) = 'text'",
+                                 -1, &sel, nil) == SQLITE_OK else {
+            NSLog("HistoryStore: sweep select failed — will retry next open")
+            sqlite3_finalize(sel)
+            return
+        }
+        while sqlite3_step(sel) == SQLITE_ROW {
+            rows.append((
+                sqlite3_column_int64(sel, 0),
+                sqlite3_column_text(sel, 1).map { String(cString: $0) } ?? "",
+                sqlite3_column_text(sel, 2).map { String(cString: $0) } ?? ""
+            ))
         }
         sqlite3_finalize(sel)
 
+        // Keep the plaintext pre-images off disk: the rollback journal would
+        // otherwise leave old page contents in unlinked blocks. MEMORY journaling
+        // trades crash-durability of this one migration for that guarantee; the
+        // sweep is idempotent, so a crash mid-migration simply retries next open.
+        exec("PRAGMA journal_mode=MEMORY")
         exec("BEGIN")
         var failed = false
         for (id, raw, cleaned) in rows {
@@ -121,13 +142,15 @@ final class HistoryStore: @unchecked Sendable {
         }
         if failed {
             exec("ROLLBACK")
-            NSLog("HistoryStore: encryption migration failed — rows left as-is, will retry next launch")
+            exec("PRAGMA journal_mode=DELETE")
+            NSLog("HistoryStore: encryption sweep failed — rows left as-is, will retry next open")
             return
         }
         exec("COMMIT")
         exec("PRAGMA user_version = 1")
         // Rewrite the file so freed pages holding plaintext are destroyed.
         exec("VACUUM")
+        exec("PRAGMA journal_mode=DELETE")
     }
 
     // MARK: - Column encode/decode
@@ -138,14 +161,22 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    /// Binds a text column: ciphertext BLOB when a key exists, plaintext TEXT
-    /// otherwise (Keychain-unavailable fallback and legacy tests).
-    private func bindColumn(_ stmt: OpaquePointer?, _ index: Int32, _ text: String) {
-        if let cipher, let blob = cipher.seal(text) {
-            bindBlob(stmt, index, blob)
-        } else {
+    /// Binds a text column. With a key: ciphertext BLOB, and a seal() failure is
+    /// reported (never silently written as plaintext into an encrypted db — the
+    /// sweep would then never repair it). Without a key: plaintext TEXT (the
+    /// Keychain-unavailable fallback and legacy tests). Returns false only when a
+    /// key exists but sealing failed, so the caller can abort the insert.
+    private func bindColumn(_ stmt: OpaquePointer?, _ index: Int32, _ text: String) -> Bool {
+        guard let cipher else {
             sqlite3_bind_text(stmt, index, text, -1, SQLITE_TRANSIENT)
+            return true
         }
+        guard let blob = cipher.seal(text) else {
+            NSLog("HistoryStore: seal() failed — dropping this dictation rather than storing it in plaintext")
+            return false
+        }
+        bindBlob(stmt, index, blob)
+        return true
     }
 
     /// Reads a column written by `bindColumn` in either era: BLOB → decrypt,
@@ -173,8 +204,7 @@ final class HistoryStore: @unchecked Sendable {
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return -1 }
             defer { sqlite3_finalize(stmt) }
             sqlite3_bind_double(stmt, 1, ts.timeIntervalSince1970)
-            bindColumn(stmt, 2, raw)
-            bindColumn(stmt, 3, cleaned)
+            guard bindColumn(stmt, 2, raw), bindColumn(stmt, 3, cleaned) else { return -1 }
             if let appBundleID {
                 sqlite3_bind_text(stmt, 4, appBundleID, -1, SQLITE_TRANSIENT)
             } else {
@@ -217,10 +247,16 @@ final class HistoryStore: @unchecked Sendable {
             defer { sqlite3_finalize(stmt) }
             var out: [DictationRecord] = []
             while out.count < limit, sqlite3_step(stmt) == SQLITE_ROW {
-                let rec = rowLocked(stmt)
-                if rec.rawText.localizedCaseInsensitiveContains(trimmed)
-                    || rec.cleanedText.localizedCaseInsensitiveContains(trimmed) {
-                    out.append(rec)
+                // Decrypt + match on the two text columns before materializing a
+                // full record, so non-matching rows skip the extra allocations.
+                let raw = decodeColumn(stmt, 2)
+                if raw.localizedCaseInsensitiveContains(trimmed) {
+                    out.append(rowLocked(stmt, rawText: raw))
+                    continue
+                }
+                let cleaned = decodeColumn(stmt, 3)
+                if cleaned.localizedCaseInsensitiveContains(trimmed) {
+                    out.append(rowLocked(stmt, rawText: raw, cleanedText: cleaned))
                 }
             }
             return out
@@ -249,6 +285,17 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
+    /// Cryptographic erase of all dictation content: destroys the Keychain key
+    /// (so any lingering ciphertext anywhere is permanently unrecoverable) and
+    /// clears the table. Confirmation must be gated by the caller.
+    func panicWipe() {
+        queue.sync {
+            exec("DELETE FROM dictations")
+            exec("VACUUM")
+        }
+        HistoryCipher.destroyKey()
+    }
+
     /// Total dictation rows (uncapped, for the Privacy "Your data" readout).
     func count() -> Int {
         queue.sync {
@@ -260,12 +307,16 @@ final class HistoryStore: @unchecked Sendable {
         }
     }
 
-    private func rowLocked(_ stmt: OpaquePointer?) -> DictationRecord {
+    /// Builds a record from the current row. `rawText`/`cleanedText` can be
+    /// passed in when the caller already decrypted them (search), avoiding a
+    /// second AES pass.
+    private func rowLocked(_ stmt: OpaquePointer?,
+                           rawText: String? = nil, cleanedText: String? = nil) -> DictationRecord {
         DictationRecord(
             id: sqlite3_column_int64(stmt, 0),
             timestamp: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 1)),
-            rawText: decodeColumn(stmt, 2),
-            cleanedText: decodeColumn(stmt, 3),
+            rawText: rawText ?? decodeColumn(stmt, 2),
+            cleanedText: cleanedText ?? decodeColumn(stmt, 3),
             appBundleID: sqlite3_column_text(stmt, 4).map { String(cString: $0) },
             durationMs: Int(sqlite3_column_int(stmt, 5)),
             pasteOK: sqlite3_column_int(stmt, 6) == 1

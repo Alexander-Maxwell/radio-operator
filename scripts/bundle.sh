@@ -72,16 +72,27 @@ else
   codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - "$APP"
 fi
 
-# Hygiene assertion: the shipped binary carries exactly the two expected
-# entitlements — a stray addition fails the build here, not in a review.
-GRANTED="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || echo '{}')"
-for KEY in com.apple.security.device.audio-input com.apple.security.automation.apple-events; do
-  echo "$GRANTED" | grep -q "$KEY" || { echo "ENTITLEMENT MISSING: $KEY"; exit 1; }
-done
-UNEXPECTED="$(echo "$GRANTED" | tr '{},' '\n' | grep -o '"com\.apple\.security\.[^"]*"' \
-  | grep -v 'device\.audio-input' | grep -v 'automation\.apple-events' || true)"
+# Hygiene assertion: the shipped binary carries EXACTLY the two expected
+# entitlements and nothing else (any namespace) — a stray addition fails the
+# build here, not in a review.
+GRANTED="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || echo 'PARSE_FAILED')"
+if [ "$GRANTED" = "PARSE_FAILED" ]; then
+  echo "ENTITLEMENT CHECK FAILED: could not read entitlements from $APP"; exit 1
+fi
+UNEXPECTED="$(printf '%s' "$GRANTED" | python3 -c '
+import json,sys
+allowed={"com.apple.security.device.audio-input","com.apple.security.automation.apple-events"}
+try:
+    keys=set(json.load(sys.stdin).keys())
+except Exception as e:
+    print("PARSE_ERROR:%s" % e); sys.exit(0)
+missing=allowed-keys
+extra=keys-allowed
+if missing: print("MISSING:%s" % ",".join(sorted(missing)))
+if extra:   print("EXTRA:%s" % ",".join(sorted(extra)))
+')"
 if [ -n "$UNEXPECTED" ]; then
-  echo "UNEXPECTED ENTITLEMENTS: $UNEXPECTED"; exit 1
+  echo "ENTITLEMENT HYGIENE FAILED: $UNEXPECTED"; exit 1
 fi
 
 echo "Built $APP (signed: ${IDENTITY:-ad-hoc}, hardened runtime on)"

@@ -58,6 +58,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let prewarmLocale = SettingsStore.shared.data.transcriptionLocale
         Task.detached { _ = await Transcriber.preferredFormat(locale: prewarmLocale) }
 
+        // Warm the history store off the main thread so the Keychain read +
+        // one-time encryption sweep + VACUUM never run on the MainActor inside
+        // the first post-dictation record(). The store is internally
+        // serialized, so a concurrent first dictation just waits on its queue.
+        if SettingsStore.shared.data.historyRetention != .never {
+            Task.detached(priority: .utility) { _ = HistoryStore.shared.count() }
+        }
+
         // Library empty-state "Start a Meeting" button.
         NotificationCenter.default.addObserver(
             forName: Notification.Name("radiooperator.startMeeting"), object: nil, queue: .main

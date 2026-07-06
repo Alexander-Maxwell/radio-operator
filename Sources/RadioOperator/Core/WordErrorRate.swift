@@ -31,13 +31,22 @@ enum WordErrorRate {
         }
     }
 
-    /// Lowercase, trim punctuation/symbols off token edges, collapse
-    /// whitespace. Interior characters survive ("don't", "u.s") — consistent
-    /// on both sides, so contractions and initialisms still match each other.
+    /// Lowercase, split on whitespace AND interior hyphens/slashes (so
+    /// "twenty-five" == "twenty five" and "and/or" == "and or" — hyphenation is
+    /// a formatting choice, not a transcription error), then trim punctuation/
+    /// symbols off token edges. Apostrophes and interior periods survive
+    /// ("don't", "u.s") — consistent on both sides, so contractions and
+    /// initialisms still match each other.
+    ///
+    /// Numeral policy: digits are compared as-is. A reference must spell numbers
+    /// the way the engine under test emits them (see the README manifest note);
+    /// "25" vs "twenty five" counts as an error by design.
     static func normalize(_ s: String) -> [String] {
         let strip = CharacterSet.punctuationCharacters.union(.symbols)
+        let separators = CharacterSet.whitespacesAndNewlines
+            .union(CharacterSet(charactersIn: "-/"))
         return s.lowercased()
-            .components(separatedBy: .whitespacesAndNewlines)
+            .components(separatedBy: separators)
             .map { $0.trimmingCharacters(in: strip) }
             .filter { !$0.isEmpty }
     }
@@ -47,11 +56,35 @@ enum WordErrorRate {
         align(ref: normalize(reference), hyp: normalize(hypothesis))
     }
 
-    /// Character error rate over the normalized text (spaces included).
+    /// Character error rate over the normalized text (spaces included). Uses a
+    /// memory-bounded distance (two rolling rows, O(min(n,m)) space) since no
+    /// caller needs the S/D/I split for characters — only the rate. This keeps
+    /// long transcripts from allocating an O(n·m) matrix.
     static func characterScore(reference: String, hypothesis: String) -> Score {
-        let r = normalize(reference).joined(separator: " ").map(String.init)
-        let h = normalize(hypothesis).joined(separator: " ").map(String.init)
-        return align(ref: r, hyp: h)
+        let r = Array(normalize(reference).joined(separator: " "))
+        let h = Array(normalize(hypothesis).joined(separator: " "))
+        let distance = levenshtein(r, h)
+        // Report the whole distance as substitutions: rate only reads `errors`
+        // (= distance) and `referenceCount`, so the split is immaterial here.
+        return Score(substitutions: distance, deletions: 0, insertions: 0, referenceCount: r.count)
+    }
+
+    /// Distance-only Levenshtein with two rolling rows.
+    static func levenshtein<T: Equatable>(_ a: [T], _ b: [T]) -> Int {
+        if a.isEmpty { return b.count }
+        if b.isEmpty { return a.count }
+        var prev = Array(0...b.count)
+        var curr = [Int](repeating: 0, count: b.count + 1)
+        for i in 1...a.count {
+            curr[0] = i
+            for j in 1...b.count {
+                curr[j] = a[i - 1] == b[j - 1]
+                    ? prev[j - 1]
+                    : min(prev[j - 1], prev[j], curr[j - 1]) + 1
+            }
+            swap(&prev, &curr)
+        }
+        return prev[b.count]
     }
 
     /// Classic DP alignment; backtrace splits the distance into S/D/I counts.

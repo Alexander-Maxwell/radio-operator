@@ -319,9 +319,11 @@ final class ClaudeService: @unchecked Sendable {
         if mode == .api, let key = await MainActor.run(body: { SettingsStore.shared.apiKey }) {
             return try await runAPI(prompt: prompt, model: apiModel, key: key)
         }
-        // Summaries and titles are pure text transforms — scope the CLI to the
-        // same read-only tool set as Ask so the subprocess never inherits
-        // claude's default Write/Bash/WebFetch surface.
+        // Summaries and titles are pure text transforms over untrusted content
+        // (meeting transcripts include other people's speech). --allowedTools
+        // only PRE-APPROVES read tools; it does not remove anything, so pair it
+        // with an explicit deny list (deny rules beat any inherited allow rules)
+        // to actually keep Bash/Write/WebFetch off the subprocess.
         return try await runCLI(prompt: prompt, cwd: nil, allowedTools: "Read,Grep,Glob", timeout: timeout)
     }
 
@@ -348,6 +350,12 @@ final class ClaudeService: @unchecked Sendable {
             if let allowedTools {
                 args += ["--allowedTools", allowedTools]
             }
+            // Deny the write/exec/network surface outright. Deny rules override
+            // any allow rules inherited from user/project settings, so this is
+            // the real boundary (the transcript being summarized is untrusted
+            // third-party speech — a prompt-injection guard in depth).
+            args += ["--disallowedTools",
+                     "Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task"]
             proc.arguments = args
             if let cwd { proc.currentDirectoryURL = cwd }
 

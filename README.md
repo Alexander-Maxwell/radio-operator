@@ -79,14 +79,23 @@ entitlements (asserted at build), on-device speech, single network egress
 
 ## Data at rest
 
-- **Dictation history** (`history.sqlite`) is **AES-256-GCM encrypted** per
-  column; the key lives in the login Keychain, device-only. Deleting the key is
-  a cryptographic erase. `PRAGMA secure_delete` is on, and Clear History
-  VACUUMs, so cleared rows aren't recoverable from the file.
+- **Dictation history** (`history.sqlite`): the transcript columns (`raw`,
+  `cleaned`) are **AES-256-GCM encrypted**. Row metadata (timestamp, target-app
+  bundle id, duration, paste result) stays plaintext. The key is a
+  non-synchronizable generic password in the login Keychain — encrypted with
+  your login password, never iCloud-synced (it is not hardware device-bound;
+  it migrates with the keychain file). `PRAGMA secure_delete` is on and Clear
+  History VACUUMs, so cleared rows aren't recoverable from the file. Destroying
+  the key (`HistoryStore.panicWipe()`) is a cryptographic erase of all
+  transcript content. A confirmation-gated in-app control for this is planned
+  (see docs/plans/uplift-plan.md, decision D8).
 - **Meeting notes and dictation logs** in `~/Documents/Radio Operator` are
   **plain markdown by design** — they're yours, they're Obsidian-compatible,
   and Ask's CLI mode greps them directly. FileVault covers them at rest.
   (Deliberate trade-off; see docs/plans/uplift-plan.md, decision D5.)
+- **Upgrade is one-way:** after 0.3.0 first-launch migration, `history.sqlite`
+  is unreadable by pre-0.3.0 builds (rows render as ciphertext). To roll back,
+  restore a pre-upgrade copy of the database.
 
 ## Sync across Macs
 

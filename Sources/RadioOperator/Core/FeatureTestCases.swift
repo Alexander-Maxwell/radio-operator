@@ -82,6 +82,60 @@ enum HistoryStoreTestCases {
             t.expect(!fileContains(url, "shred-target-omega"), "bytes scrubbed after deleteAll")
         }
 
+        t.test("plaintext written to a v1 db is healed on next healthy open") { t in
+            // Regression: the encryption sweep must not be gated on user_version.
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
+            defer { try? FileManager.default.removeItem(at: url) }
+            let key = HistoryCipher(key: SymmetricKey(size: .bits256))
+            // Era 1: encrypted store stamps user_version = 1.
+            var era1: HistoryStore? = HistoryStore(path: url.path, cipher: key)
+            era1?.record(raw: "encrypted-row", cleaned: "encrypted-row",
+                         appBundleID: nil, durationMs: 1, pasteOK: true)
+            era1 = nil
+            // Era 2: Keychain unavailable (cipher nil) — a row lands as plaintext
+            // in a db already stamped "encrypted".
+            var era2: HistoryStore? = HistoryStore(path: url.path, cipher: nil)
+            era2?.record(raw: "degraded-plaintext-row", cleaned: "degraded-plaintext-row",
+                         appBundleID: nil, durationMs: 1, pasteOK: true)
+            era2 = nil
+            t.expect(fileContains(url, "degraded-plaintext-row"), "plaintext present after degraded write")
+            // Era 3: key back — the sweep must re-encrypt the stranded row.
+            let era3 = HistoryStore(path: url.path, cipher: key)
+            t.expectEqual(era3.recent().count, 2, "both rows present")
+            t.expect(!fileContains(url, "degraded-plaintext-row"), "stranded plaintext healed by the sweep")
+            t.expectEqual(era3.search(query: "degraded").count, 1, "healed row still searchable")
+        }
+
+        t.test("seal failure drops the row instead of writing plaintext") { t in
+            // A 64-bit key is not a valid AES key size, so seal() returns nil.
+            let bad = HistoryCipher(key: SymmetricKey(size: .init(bitCount: 64)))
+            let (store, url) = makeStore(cipher: bad)
+            defer { try? FileManager.default.removeItem(at: url) }
+            let id = store.record(raw: "must-not-persist", cleaned: "must-not-persist",
+                                  appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expectEqual(id, -1, "record reports failure")
+            t.expectEqual(store.count(), 0, "no row inserted")
+            t.expect(!fileContains(url, "must-not-persist"), "no plaintext leaked to the file")
+        }
+
+        t.test("unicode round-trips through encryption") { t in
+            let (store, url) = makeStore()
+            defer { try? FileManager.default.removeItem(at: url) }
+            let text = "café ☕️ 会議 — 🎙️ don't"
+            store.record(raw: text, cleaned: text, appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expectEqual(store.recent().first?.cleanedText ?? "", text, "multibyte content round-trips")
+            t.expectEqual(store.search(query: "会議").count, 1, "search matches multibyte")
+        }
+
+        t.test("panicWipe empties the table") { t in
+            let (store, url) = makeStore()
+            defer { try? FileManager.default.removeItem(at: url) }
+            store.record(raw: "gone", cleaned: "gone", appBundleID: nil, durationMs: 1, pasteOK: true)
+            store.panicWipe()
+            t.expectEqual(store.recent().count, 0, "table emptied")
+        }
+
         t.test("wrong key yields the unreadable marker, not garbage") { t in
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
@@ -253,6 +307,7 @@ enum MiscFeatureTestCases {
             s.autoSummarize = false
             s.appearance = .dark
             s.summaryTemplate = "## Custom\n(x)"
+            s.transcriptionLocaleIdentifier = "de_DE"
             guard let data = try? JSONEncoder().encode(s),
                   let back = try? JSONDecoder().decode(SettingsData.self, from: data) else {
                 t.expect(false, "encode/decode failed"); return
@@ -261,6 +316,7 @@ enum MiscFeatureTestCases {
             t.expectEqual(back.autoSummarize, false, "autoSummarize round-trips")
             t.expectEqual(back.appearance, .dark, "appearance round-trips")
             t.expectEqual(back.summaryTemplate, "## Custom\n(x)", "template round-trips")
+            t.expectEqual(back.transcriptionLocaleIdentifier, "de_DE", "transcription locale round-trips")
         }
 
         t.test("ask scope maps to the right folder") { t in

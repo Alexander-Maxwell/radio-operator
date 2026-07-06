@@ -3,9 +3,18 @@ import CryptoKit
 import Security
 
 /// AES-256-GCM encryption for the dictation-history columns. The key is
-/// generated once and lives in the login Keychain, device-only (never syncs
-/// to iCloud Keychain). Deleting the key is a cryptographic erase of every
-/// encrypted row — the future panic-wipe primitive.
+/// generated once and lives in the login Keychain as a non-synchronizable
+/// generic password, so it does not iCloud-sync. Deleting the key is a
+/// cryptographic erase of every encrypted row — the panic-wipe primitive.
+///
+/// Note on at-rest protection: the login (file-based) Keychain does not honor
+/// `kSecAttrAccessible` protection classes — those apply to the iOS-style
+/// data-protection Keychain, which on macOS needs an application-identifier
+/// entitlement this self-signed build does not carry. So the honest posture is:
+/// the item is encrypted by the login keychain (unlocked with the login
+/// password) and never syncs; it is NOT hardware device-bound. Adding
+/// `kSecUseDataProtectionKeychain` here would fail with errSecMissingEntitlement
+/// and trip the plaintext fallback — strictly worse — so we don't.
 ///
 /// Injectable so tests run against a throwaway key with zero Keychain access.
 struct HistoryCipher: Sendable {
@@ -34,42 +43,67 @@ struct HistoryCipher: Sendable {
     private static let service = "com.warroom.radiooperator"
     private static let account = "history-db-key"
 
-    /// Loads the persistent history key, creating it on first use.
-    /// Returns nil only when the Keychain is unavailable; the caller falls
-    /// back to plaintext and must say so loudly.
-    static func loadOrCreate() -> HistoryCipher? {
-        let query: [String: Any] = [
+    private static var baseQuery: [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+    }
+
+    /// Reads the persistent key, or nil if it is absent/unreadable.
+    private static func readKey() -> SymmetricKey? {
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data, data.count == 32 else { return nil }
+        return SymmetricKey(data: data)
+    }
+
+    /// Loads the persistent history key, creating it on first use.
+    /// Returns nil only when the Keychain is genuinely unavailable; the caller
+    /// falls back to plaintext and must say so loudly.
+    static func loadOrCreate() -> HistoryCipher? {
+        // Fast path: key already exists.
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecSuccess, let data = item as? Data, data.count == 32 {
             return HistoryCipher(key: SymmetricKey(data: data))
         }
         guard status == errSecItemNotFound else {
-            NSLog("HistoryCipher: Keychain read failed (\(status)) — history will be stored UNENCRYPTED")
+            NSLog("HistoryCipher: Keychain read failed (\(status)) — history will be stored UNENCRYPTED this session")
             return nil
         }
+
+        // Create it. kSecAttrSynchronizable is left unset, so the item never
+        // iCloud-syncs.
         let key = SymmetricKey(size: .bits256)
         let keyData = key.withUnsafeBytes { Data($0) }
-        let add: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: keyData,
-            // Device-bound: usable after first unlock (dictation can land while
-            // the screen is locked mid-session), never leaves this Mac.
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
+        var add = baseQuery
+        add[kSecValueData as String] = keyData
         let addStatus = SecItemAdd(add as CFDictionary, nil)
-        guard addStatus == errSecSuccess else {
-            NSLog("HistoryCipher: Keychain write failed (\(addStatus)) — history will be stored UNENCRYPTED")
-            return nil
+        if addStatus == errSecSuccess {
+            return HistoryCipher(key: key)
         }
-        return HistoryCipher(key: key)
+        // Lost a first-launch race with another process/instance: the winner's
+        // key is now present — read and use it rather than downgrading.
+        if addStatus == errSecDuplicateItem, let existing = readKey() {
+            return HistoryCipher(key: existing)
+        }
+        NSLog("HistoryCipher: Keychain write failed (\(addStatus)) — history will be stored UNENCRYPTED this session")
+        return nil
+    }
+
+    /// Cryptographic erase: deletes the key so no encrypted row is ever
+    /// recoverable. Returns true if the key is gone afterward.
+    @discardableResult
+    static func destroyKey() -> Bool {
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 }

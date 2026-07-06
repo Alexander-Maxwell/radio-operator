@@ -296,9 +296,11 @@ final class SettingsStore: ObservableObject {
             }
             var add = base
             add[kSecValueData as String] = Data(newValue.utf8)
-            // Device-bound and unlocked-only: the key is read on user-initiated
-            // requests, never in the background, and must not iCloud-sync.
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            // Stored in the login Keychain as a non-synchronizable generic
+            // password: encrypted with the login password, never iCloud-synced.
+            // (kSecAttrAccessible protection classes are honored only by the
+            // data-protection Keychain, which needs an application-identifier
+            // entitlement this self-signed build lacks — so it is not set here.)
             SecItemAdd(add as CFDictionary, nil)
             objectWillChange.send()
         }
