@@ -52,11 +52,11 @@ Two cross-area collisions resolve cleanly:
 |---|---|---|---|
 | Entitlements file + hardened-runtime signing (Platform mechanics + Security contents, merged) | Platform+Security | S | critical |
 | Notarization + stapling pipeline (`notarytool submit --wait` → `stapler staple` → verify; Makefile `release`) | Platform | S | critical |
-| HistoryStore column encryption — CryptoKit AES-256-GCM on `raw`/`cleaned`, key in Keychain (ThisDeviceOnly), off the paste hot path | Security | M | high |
+| HistoryStore column encryption — CryptoKit AES-256-GCM on `raw`/`cleaned`, key in login Keychain (non-synchronizable generic password), off the paste hot path | Security | M | high |
 | iCloud Drive notes-folder sync (verify + document; point `notesFolder` at iCloud/Obsidian — zero code) | Platform | S | medium |
 | Sparkle SPM integration + updater wiring (inside-out nested signing, never `--deep`) | Platform | M | high |
 | EdDSA keys + appcast generation + hosting (**back up the private key — losing it means no installed build ever gets a trusted update again**) | Platform | S | high |
-| Quick security hardening bundle (`PRAGMA secure_delete=ON` + VACUUM after `deleteAll`; `--allowedTools Read,Grep,Glob` on `summarize()`/`meetingTitle()`; `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` on the API key) | Security | S | medium |
+| Quick security hardening bundle (`PRAGMA secure_delete=ON` + VACUUM after `deleteAll`; `--disallowedTools` deny-list on `summarize()`/`meetingTitle()` — `--allowedTools` only pre-approves; API key as a non-synchronizable login-Keychain item so it never iCloud-syncs) | Security | S | medium |
 | App Sandbox incompatibility + posture record (README: sandbox out, hardened runtime in, compensating controls) | Security | S | low |
 
 **Why the CryptoKit choice is here, not in isolation:** SQLCipher's binary xcframework would force either re-signing at bundle time or `com.apple.security.cs.disable-library-validation` — exactly the privilege least-privilege exists to avoid. CryptoKit app-layer AES-GCM is the *only* encryption choice that lets the notarized build keep library-validation ON with zero `cs.*` exceptions. SQLCipher stays a documented upgrade path only if ciphertext column-search ever becomes a hard requirement.
@@ -178,7 +178,7 @@ Two cross-area collisions resolve cleanly:
 3. Point `notesFolder` at iCloud Drive + a Settings hint → cross-device sync, zero code.
 4. `PRAGMA secure_delete=ON` + VACUUM after `deleteAll` → "Clear history" actually overwrites freed bytes.
 5. `--allowedTools Read,Grep,Glob` on summary subprocesses → stop inheriting Write/Bash/WebFetch.
-6. `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` on the API key → never iCloud-syncs.
+6. API key stored as a non-synchronizable login-Keychain generic password → never iCloud-syncs. (macOS's file-based login Keychain ignores `kSecAttrAccessible` protection classes, so none is set.)
 7. De-hardcode the 3 `en_US` sites + locale-keyed `preferredFormat` cache → parameterizes the engine before any UI.
 8. `WordErrorRate` pure-Swift unit + 4–6 known-answer cases → the scoring core, offline-testable.
 9. URL scheme trigger → immediately Shortcuts-callable.

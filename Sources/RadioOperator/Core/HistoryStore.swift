@@ -286,13 +286,16 @@ final class HistoryStore: @unchecked Sendable {
             while out.count < limit, sqlite3_step(stmt) == SQLITE_ROW {
                 // Decrypt + match on the two text columns before materializing a
                 // full record, so non-matching rows skip the extra allocations.
+                // A row that failed to decrypt shows the unreadable marker; it
+                // must not produce false-positive hits when a query happens to be
+                // a substring of that marker ("key", "missing", …).
                 let raw = decodeColumn(stmt, 2)
-                if raw.localizedCaseInsensitiveContains(trimmed) {
+                if raw != HistoryCipher.unreadableMarker, raw.localizedCaseInsensitiveContains(trimmed) {
                     out.append(rowLocked(stmt, rawText: raw))
                     continue
                 }
                 let cleaned = decodeColumn(stmt, 3)
-                if cleaned.localizedCaseInsensitiveContains(trimmed) {
+                if cleaned != HistoryCipher.unreadableMarker, cleaned.localizedCaseInsensitiveContains(trimmed) {
                     out.append(rowLocked(stmt, rawText: raw, cleanedText: cleaned))
                 }
             }

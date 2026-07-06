@@ -173,7 +173,14 @@ private struct DictationHistoryList: View {
         searchTask?.cancel()
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if q.isEmpty {
-            records = HistoryStore.shared.recent()
+            // Clearing should feel instant (no debounce), but the recent()
+            // decrypt still must not run on the MainActor.
+            searchTask = Task {
+                let rows = await Task.detached(priority: .userInitiated) {
+                    HistoryStore.shared.recent()
+                }.value
+                if !Task.isCancelled { records = rows }
+            }
             return
         }
         searchTask = Task {

@@ -176,6 +176,17 @@ enum HistoryStoreTestCases {
                                       cipher: HistoryCipher(key: SymmetricKey(size: .bits256)))
             t.expectEqual(reader.recent().first?.cleanedText ?? "",
                           HistoryCipher.unreadableMarker, "marker shown for undecryptable rows")
+            // The marker must not produce false-positive search hits.
+            t.expectEqual(reader.search(query: "key").count, 0, "no spurious hit on marker substring 'key'")
+            t.expectEqual(reader.search(query: "missing").count, 0, "no spurious hit on 'missing'")
+        }
+
+        t.test("empty transcript round-trips, not stored as the marker") { t in
+            let (store, url) = makeStore()
+            defer { try? FileManager.default.removeItem(at: url) }
+            store.record(raw: "", cleaned: "", appBundleID: nil, durationMs: 1, pasteOK: true)
+            t.expectEqual(store.count(), 1, "empty transcript stored, not dropped")
+            t.expectEqual(store.recent().first?.cleanedText ?? "MISSING", "", "empty round-trips, not marker/nil")
         }
 
         t.test("prune removes only old rows") { t in
