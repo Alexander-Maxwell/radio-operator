@@ -1,0 +1,43 @@
+# Core-tier CI gate (D10): hosted macOS only, no self-hosted runner.
+# Proves the app builds and the deterministic/offline test tier passes on a
+# machine that is not the maintainer's Mac. The device tier (hardware, TCC,
+# signed-in Claude CLI) stays a manual pre-release checklist:
+# docs/device-checklist.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  core:
+    # macOS 26 image: the SpeechAnalyzer SDK floor (Package.swift targets
+    # macOS 26). If GitHub ever drops or hasn't yet rolled out the macos-26
+    # label for this plan, fall back to macos-15 — expect the build step to
+    # become the gate there (older SDKs may not compile the SpeechAnalyzer
+    # references), so treat that as a stopgap, not a target.
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Core tests
+        run: .build/debug/RadioOperator --run-tests --core-only --tests-json test-results.json
+
+      - name: Log hygiene (no dictation content in os_log/NSLog/print)
+        run: bash scripts/audit-logging.sh
+
+      - name: Test results summary
+        if: always()
+        run: |
+          if [ -f test-results.json ]; then
+            cat test-results.json
+          fi
