@@ -31,8 +31,8 @@ final class MeetingController: ObservableObject {
         }
     }
 
-    private var micTranscriber: Transcriber?
-    private var systemTranscriber: Transcriber?
+    private var micTranscriber: (any TranscriptionEngine)?
+    private var systemTranscriber: (any TranscriptionEngine)?
     private let tap = SystemAudioTap()
     private var micToken: UUID?
     private var assembler = TranscriptAssembler()
@@ -119,7 +119,7 @@ final class MeetingController: ObservableObject {
         }
 
         // Mic → "Me"
-        let mic = Transcriber(channel: .me)
+        let mic: any TranscriptionEngine = Transcriber(channel: .me)
         micTranscriber = mic
         mic.onEvent = { [weak self] event in
             Task { @MainActor in self?.ingest(event) }
@@ -129,7 +129,7 @@ final class MeetingController: ObservableObject {
         }
 
         // System audio → "Them"
-        let system = Transcriber(channel: .them)
+        let system: any TranscriptionEngine = Transcriber(channel: .them)
         systemTranscriber = system
         system.onEvent = { [weak self] event in
             Task { @MainActor in self?.ingest(event) }

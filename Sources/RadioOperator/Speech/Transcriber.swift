@@ -2,11 +2,12 @@ import Foundation
 import Speech
 import AVFoundation
 
-/// Wraps one SpeechAnalyzer + SpeechTranscriber session for a single audio
-/// channel. The input stream exists from init, so buffers can be fed (and are
-/// buffered) even before `start()` finishes — no first-word clipping.
+/// The concrete Apple engine: wraps one SpeechAnalyzer + SpeechTranscriber
+/// session for a single audio channel (see `TranscriptionEngine` for the
+/// contract). The input stream exists from init, so buffers can be fed (and
+/// are buffered) even before `start()` finishes — no first-word clipping.
 /// Events arrive on an arbitrary task context; marshal to MainActor yourself.
-final class Transcriber: @unchecked Sendable {
+final class Transcriber: TranscriptionEngine, @unchecked Sendable {
     let channel: Speaker
 
     private var analyzer: SpeechAnalyzer?

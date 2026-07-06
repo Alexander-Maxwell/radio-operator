@@ -22,7 +22,7 @@ final class DictationController {
     }
 
     private var state: State = .idle
-    private var transcriber: Transcriber?
+    private var transcriber: (any TranscriptionEngine)?
     private var micToken: UUID?
     private var target: PasteService.Target?
     private let paste = PasteService()
@@ -138,7 +138,7 @@ final class DictationController {
         PillController.shared.show()
         hotkeys.setRecordingTapEnabled(true)
 
-        let transcriber = Transcriber(channel: .me)
+        let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
         self.transcriber = transcriber
 
         transcriber.onEvent = { event in

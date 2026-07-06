@@ -218,7 +218,7 @@ enum ProbeRunner {
                 return nil
             }
 
-            let transcriber = Transcriber(channel: .me)
+            let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
             var finals: [String] = []
             let lock = NSLock()
             transcriber.onEvent = { event in
