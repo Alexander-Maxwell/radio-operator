@@ -45,44 +45,86 @@ final class PasteService {
     /// Clipboard managers honor this marker and skip the item — dictations
     /// shouldn't accumulate in third-party clipboard history. Also used by
     /// SelectionReader's transient copy-capture sentinel.
-    static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+    nonisolated static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+
+    /// Stages dictated text on a pasteboard: the string plus the concealed
+    /// marker, in one write. Returns the resulting changeCount so the guarded
+    /// restore can detect later writers. Static + nonisolated so the
+    /// concealed-marker invariant is regression-testable on a scratch
+    /// pasteboard (a missing marker silently leaks every dictation into
+    /// third-party clipboard managers).
+    nonisolated static func stage(_ text: String, on pb: NSPasteboard) -> Int {
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        pb.setString("1", forType: PasteService.concealedType)
+        return pb.changeCount
+    }
+
+    /// The paste/don't-paste call, decided purely from the observed
+    /// preconditions so every branch is unit-testable. A wrong decision here
+    /// silently loses dictated text (pastes into a password field, or claims
+    /// success while the keystroke went nowhere) — highest-consequence logic
+    /// in the paste path. Priority order matters: secure input beats a dead
+    /// target beats a failed refocus.
+    enum PasteDecision: Equatable {
+        case paste
+        case clipboardOnly(reason: String)
+    }
+
+    nonisolated static func pasteDecision(secureInput: Bool, targetTerminated: Bool,
+                                          refocusNeeded: Bool, refocusSettled: Bool) -> PasteDecision {
+        // Secure input (password fields, Terminal Secure Keyboard Entry)
+        // silently swallows synthetic Cmd+V.
+        if secureInput {
+            return .clipboardOnly(reason: "Secure input active — press ⌘V to paste")
+        }
+        if targetTerminated {
+            return .clipboardOnly(reason: "The app you were in closed — press ⌘V where you want the text")
+        }
+        if refocusNeeded && !refocusSettled {
+            return .clipboardOnly(reason: "Couldn't refocus the app — press ⌘V where you want the text")
+        }
+        return .paste
+    }
 
     private func performPaste(_ text: String, target: Target) async -> Outcome {
         let pb = NSPasteboard.general
         let saved = PasteService.snapshot(pb)
-        pb.clearContents()
-        pb.setString(text, forType: .string)
-        pb.setString("1", forType: PasteService.concealedType)
-        let ourChangeCount = pb.changeCount
+        let ourChangeCount = PasteService.stage(text, on: pb)
 
-        // Precondition: secure input (password fields, Terminal Secure
-        // Keyboard Entry) silently swallows synthetic Cmd+V.
-        if IsSecureEventInputEnabled() {
-            return .clipboardOnly(reason: "Secure input active — press ⌘V to paste")
-        }
-
-        // Precondition: target alive.
-        if let app = target.app, app.isTerminated {
-            return .clipboardOnly(reason: "The app you were in closed — press ⌘V where you want the text")
-        }
+        let secureInput = IsSecureEventInputEnabled()
+        let targetTerminated = target.app?.isTerminated ?? false
 
         // Activate the target only if it lost frontmost status (activating a
-        // frontmost Chromium app can drop field focus).
-        if let app = target.app,
+        // frontmost Chromium app can drop field focus). Skipped when a
+        // precondition already failed — same as the old early returns.
+        var refocusNeeded = false
+        var refocusSettled = true
+        if !secureInput, !targetTerminated, let app = target.app,
            NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
+            refocusNeeded = true
+            refocusSettled = false
             app.activate()
-            var settled = false
             for _ in 0..<8 {
                 try? await Task.sleep(nanoseconds: 25_000_000)
                 if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier {
-                    settled = true
+                    refocusSettled = true
                     break
                 }
             }
-            if !settled {
-                return .clipboardOnly(reason: "Couldn't refocus the app — press ⌘V where you want the text")
+            if refocusSettled {
+                try? await Task.sleep(nanoseconds: 120_000_000)
             }
-            try? await Task.sleep(nanoseconds: 120_000_000)
+        }
+
+        switch PasteService.pasteDecision(secureInput: secureInput,
+                                          targetTerminated: targetTerminated,
+                                          refocusNeeded: refocusNeeded,
+                                          refocusSettled: refocusSettled) {
+        case .clipboardOnly(let reason):
+            return .clipboardOnly(reason: reason)
+        case .paste:
+            break
         }
 
         // Wait for physical modifiers (the just-released hotkey) to clear so

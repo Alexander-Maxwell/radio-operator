@@ -45,6 +45,7 @@ enum TestRunner {
         ("MCP", MCPTestCases.run),
         ("CommandMode", CommandModeTestCases.run),
         ("URLCommand", URLCommandTestCases.run),
+        ("PasteLogic", PasteLogicTestCases.run),
     ]
 
     /// Device tier: suites that need real hardware, TCC grants, or a signed-in
