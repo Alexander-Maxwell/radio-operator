@@ -26,7 +26,8 @@ check per line.
 | 1.3 | Mics | `--probe-mics` | Every physically attached input device is listed with UID + channels; default matches System Settings. |
 | 1.4 | Ask | `--probe-ask` (`make probe-ask`) | Round-trip answer cites the seeded note. Needs this Mac's Claude CLI auth — this is the check that the CLI discovery + auth path works off the dev machine. |
 | 1.5 | WER | `--probe-wer <manifest.json>` | WER/CER prints for the labeled clip set and stays within the accepted baseline for the release. Gate number for any engine decision (D2). |
-| 1.6 | Soak / churn | _pending — lands with the stress-mode unit_ | Once they exist: pass only if RSS growth after warm-up stays ≤ 50%, sampled 3–5×, per D9. Never declare a leak (or a fix) off one sample. |
+| 1.6 | Churn | `--probe-churn 40` | 3–5 RSS samples print after the warm-up cycles, then `PROBE-RESULT PASS`. FAIL fires only when growth vs the post-warm-up baseline exceeds 50% on EVERY sample (D9) — judge flapping from the printed samples, never one reading. Exercises MicCapture subscribe/feed/unsubscribe + Transcriber start/cancel teardown. |
+| 1.7 | Soak | `--probe-soak 300` | Same D9 verdict over one held mic subscription + live transcriber session. RSS plateau expected; growth >50% on every sample = leak. |
 
 ## 2. Paste smoke (needs Accessibility + Input Monitoring TCC)
 

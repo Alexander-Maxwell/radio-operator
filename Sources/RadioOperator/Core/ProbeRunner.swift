@@ -72,6 +72,34 @@ enum ProbeRunner {
             semaphore.wait()
             exit(box.ok ? 0 : 1)
         }
+        if let flagIndex = args.firstIndex(of: "--probe-churn") {
+            guard args.count > flagIndex + 1, let cycles = Int(args[flagIndex + 1]), cycles >= 1 else {
+                print("usage: RadioOperator --probe-churn <cycles>   (>= 8 recommended for a D9 verdict)")
+                exit(2)
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            let box = ResultBox()
+            Task {
+                box.ok = await probeChurn(cycles: cycles)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            exit(box.ok ? 0 : 1)
+        }
+        if let flagIndex = args.firstIndex(of: "--probe-soak") {
+            guard args.count > flagIndex + 1, let seconds = Int(args[flagIndex + 1]), seconds >= 20 else {
+                print("usage: RadioOperator --probe-soak <seconds>   (>= 20; 300 recommended)")
+                exit(2)
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            let box = ResultBox()
+            Task {
+                box.ok = await probeSoak(seconds: seconds)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            exit(box.ok ? 0 : 1)
+        }
         return false
     }
 
@@ -197,6 +225,227 @@ enum ProbeRunner {
             print("PROBE-ASK error: \(error.localizedDescription)")
             print("PROBE-RESULT FAIL — ask threw (needs Claude auth/CLI in this session)")
         }
+    }
+
+    // MARK: - Stress modes (device tier, manual — docs/device-checklist.md)
+
+    /// D9 leak decision: FAIL only when RSS growth versus the post-warm-up
+    /// baseline exceeds `thresholdPercent` on EVERY one of at least 3 samples.
+    /// One sub-threshold sample means the signal is flapping, not proven — a
+    /// single reading must never convict (the flapping-monitor lesson).
+    /// Pure so the rule itself is unit-tested in the core tier.
+    struct LeakVerdict: Equatable {
+        /// False when there were not enough samples (< 3) or no baseline.
+        let decided: Bool
+        let fail: Bool
+    }
+
+    static func leakVerdict(baselineBytes: UInt64, sampleBytes: [UInt64],
+                            thresholdPercent: Double = 50) -> LeakVerdict {
+        guard baselineBytes > 0, sampleBytes.count >= 3 else {
+            return LeakVerdict(decided: false, fail: false)
+        }
+        let allOver = sampleBytes.allSatisfy {
+            growthPercent(baselineBytes: baselineBytes, sampleBytes: $0) > thresholdPercent
+        }
+        return LeakVerdict(decided: true, fail: allOver)
+    }
+
+    /// RSS growth of one sample over the baseline, in percent (can be negative).
+    static func growthPercent(baselineBytes: UInt64, sampleBytes: UInt64) -> Double {
+        guard baselineBytes > 0 else { return 0 }
+        return (Double(sampleBytes) - Double(baselineBytes)) / Double(baselineBytes) * 100
+    }
+
+    /// Current resident set size via task_info(MACH_TASK_BASIC_INFO), or 0 on
+    /// failure (which the verdict treats as undecidable, never as a FAIL).
+    static func currentRSSBytes() -> UInt64 {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let kr: kern_return_t = withUnsafeMutablePointer(to: &info) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return kr == KERN_SUCCESS ? info.resident_size : 0
+    }
+
+    /// A zero-filled PCM buffer in `format` — synthetic silence so churn/soak
+    /// exercise the feed path even when the mic is unavailable or muted.
+    static func silenceBuffer(format: AVAudioFormat, frames: AVAudioFrameCount) -> AVAudioPCMBuffer? {
+        guard let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+        buf.frameLength = frames // AVAudioPCMBuffer allocations are zeroed
+        return buf
+    }
+
+    private static func mbString(_ bytes: UInt64) -> String {
+        String(format: "%.1f MB", Double(bytes) / 1_000_000)
+    }
+
+    private static func printSample(_ index: Int, of total: Int, rss: UInt64, baseline: UInt64) {
+        let growth = growthPercent(baselineBytes: baseline, sampleBytes: rss)
+        print(String(format: "PROBE-SAMPLE %d/%d RSS %@ (%+.1f%% vs baseline)",
+                     index, total, mbString(rss), growth))
+    }
+
+    private static func printLeakVerdict(_ v: LeakVerdict, baseline: UInt64, samples: [UInt64]) -> Bool {
+        guard v.decided else {
+            print("PROBE-RESULT PASS (inconclusive — need a baseline plus 3-5 post-warm-up samples, D9)")
+            return true
+        }
+        let growths = samples.map { growthPercent(baselineBytes: baseline, sampleBytes: $0) }
+        let minG = growths.min() ?? 0
+        let maxG = growths.max() ?? 0
+        if v.fail {
+            print(String(format: "PROBE-RESULT FAIL — RSS growth exceeded 50%% on every sample "
+                + "(min %+.1f%%, max %+.1f%%) vs the post-warm-up baseline (D9)", minG, maxG))
+            return false
+        }
+        print(String(format: "PROBE-RESULT PASS — RSS growth min %+.1f%%, max %+.1f%% "
+            + "(FAIL requires >50%% on every one of 3-5 samples, D9); judge flapping from the samples above",
+            minG, maxG))
+        return true
+    }
+
+    /// `--probe-churn <n>`: n cycles of MicCapture subscribe → feed →
+    /// unsubscribe plus Transcriber start → cancel, the teardown paths where
+    /// session leaks hide. RSS baselined after warm-up cycles, then sampled
+    /// 3-5 times across the measured cycles (D9).
+    static func probeChurn(cycles: Int) async -> Bool {
+        let locale = Transcriber.defaultLocale
+        guard let format = await Transcriber.preferredFormat(locale: locale) else {
+            print("PROBE-FAIL: no speech model/format for \(locale.identifier)")
+            return false
+        }
+        let warmup = min(3, cycles)
+        let measured = cycles - warmup
+        print("PROBE-CHURN \(cycles) cycles (\(warmup) warm-up + \(measured) measured) — "
+            + "MicCapture subscribe/feed/unsubscribe + Transcriber start/cancel per cycle")
+        for i in 0..<warmup {
+            await churnCycle(format: format, locale: locale, first: i == 0)
+        }
+        let baseline = currentRSSBytes()
+        print("PROBE-BASELINE RSS \(mbString(baseline)) after \(warmup) warm-up cycles")
+        guard measured > 0 else {
+            return printLeakVerdict(LeakVerdict(decided: false, fail: false),
+                                    baseline: baseline, samples: [])
+        }
+        let sampleCount = min(5, measured)
+        let interval = max(1, Int((Double(measured) / Double(sampleCount)).rounded(.up)))
+        var samples: [UInt64] = []
+        for j in 1...measured {
+            await churnCycle(format: format, locale: locale, first: false)
+            if (j % interval == 0 || j == measured) && samples.count < 5 {
+                let rss = currentRSSBytes()
+                samples.append(rss)
+                printSample(samples.count, of: sampleCount, rss: rss, baseline: baseline)
+            }
+        }
+        return printLeakVerdict(leakVerdict(baselineBytes: baseline, sampleBytes: samples),
+                                baseline: baseline, samples: samples)
+    }
+
+    /// One full session churn: subscribe the mic, spin up a real Transcriber,
+    /// feed it (live buffers if the mic engine started, synthetic silence
+    /// regardless), then tear both down.
+    private static func churnCycle(format: AVAudioFormat, locale: Locale, first: Bool) async {
+        let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
+        transcriber.onEvent = { _ in }
+        transcriber.onError = { _ in } // session errors are expected noise under churn
+        var token: UUID?
+        do {
+            token = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in
+                transcriber.feed(buffer)
+            })
+        } catch {
+            if first {
+                print("PROBE-CHURN note: mic unavailable (\(error.localizedDescription)) — synthetic buffers only")
+            }
+        }
+        do {
+            try await transcriber.start(locale: locale)
+        } catch {
+            if first {
+                print("PROBE-CHURN note: transcriber start failed (\(error.localizedDescription))")
+            }
+        }
+        if let buf = silenceBuffer(format: format,
+                                   frames: AVAudioFrameCount(max(1, Int(format.sampleRate / 10)))) {
+            transcriber.feed(buf)
+        }
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        if let token { MicCapture.shared.unsubscribe(token) }
+        transcriber.cancel()
+    }
+
+    /// `--probe-soak <seconds>`: hold one mic subscription + one live
+    /// Transcriber session for the whole window and watch RSS. Baseline after
+    /// a warm-up, then 3-5 evenly spaced samples; verdict per D9.
+    static func probeSoak(seconds: Int) async -> Bool {
+        let locale = Transcriber.defaultLocale
+        guard let format = await Transcriber.preferredFormat(locale: locale) else {
+            print("PROBE-FAIL: no speech model/format for \(locale.identifier)")
+            return false
+        }
+        let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
+        transcriber.onEvent = { _ in }
+        transcriber.onError = { message in print("PROBE-SOAK transcriber error: \(message)") }
+
+        var token: UUID?
+        do {
+            token = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in
+                transcriber.feed(buffer)
+            })
+        } catch {
+            print("PROBE-SOAK note: mic unavailable (\(error.localizedDescription)) — feeding synthetic silence")
+        }
+        // No mic: feed real-time-rate silence so the session processes audio
+        // for the whole soak instead of idling.
+        var feeder: Task<Void, Never>?
+        if token == nil {
+            feeder = Task {
+                let frames = AVAudioFrameCount(max(1, Int(format.sampleRate / 10)))
+                while !Task.isCancelled {
+                    if let buf = silenceBuffer(format: format, frames: frames) {
+                        transcriber.feed(buf)
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+        }
+        do {
+            try await transcriber.start(locale: locale)
+        } catch {
+            print("PROBE-FAIL: transcriber start failed (\(error.localizedDescription))")
+            feeder?.cancel()
+            if let token { MicCapture.shared.unsubscribe(token) }
+            return false
+        }
+
+        let warmup = min(15, max(5, seconds / 5))
+        let remaining = seconds - warmup
+        print("PROBE-SOAK \(seconds)s (\(warmup)s warm-up + \(remaining)s measured), "
+            + "mic \(token != nil ? "live" : "synthetic")")
+        try? await Task.sleep(nanoseconds: UInt64(warmup) * 1_000_000_000)
+        let baseline = currentRSSBytes()
+        print("PROBE-BASELINE RSS \(mbString(baseline)) after \(warmup)s warm-up")
+
+        let sampleCount = min(5, max(3, remaining / 10))
+        let interval = Double(remaining) / Double(sampleCount)
+        var samples: [UInt64] = []
+        for k in 1...sampleCount {
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            let rss = currentRSSBytes()
+            samples.append(rss)
+            printSample(k, of: sampleCount, rss: rss, baseline: baseline)
+        }
+
+        feeder?.cancel()
+        if let token { MicCapture.shared.unsubscribe(token) }
+        _ = await transcriber.finishAndWait(timeout: 5.0)
+        return printLeakVerdict(leakVerdict(baselineBytes: baseline, sampleBytes: samples),
+                                baseline: baseline, samples: samples)
     }
 
     /// Pushes an audio file through the production Transcriber path. Returns
