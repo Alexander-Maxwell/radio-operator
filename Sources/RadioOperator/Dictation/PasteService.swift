@@ -43,8 +43,9 @@ final class PasteService {
     }
 
     /// Clipboard managers honor this marker and skip the item — dictations
-    /// shouldn't accumulate in third-party clipboard history.
-    private static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+    /// shouldn't accumulate in third-party clipboard history. Also used by
+    /// SelectionReader's transient copy-capture sentinel.
+    static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
 
     private func performPaste(_ text: String, target: Target) async -> Outcome {
         let pb = NSPasteboard.general

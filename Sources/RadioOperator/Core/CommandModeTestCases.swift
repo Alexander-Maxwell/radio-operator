@@ -30,6 +30,24 @@ enum CommandModeTestCases {
             }
         }
 
+        t.test("selection resolution: empty means insert (D6a)") { t in
+            t.expectEqual(SelectionReader.resolve(axText: "pick me", copiedText: nil),
+                          SelectionReader.Selection(text: "pick me", mode: .replace),
+                          "AX selection replaces")
+            t.expectEqual(SelectionReader.resolve(axText: "", copiedText: "stale"),
+                          SelectionReader.Selection(text: nil, mode: .insert),
+                          "empty AX answer is authoritative — copy ignored")
+            t.expectEqual(SelectionReader.resolve(axText: nil, copiedText: "copied"),
+                          SelectionReader.Selection(text: "copied", mode: .replace),
+                          "copy fallback replaces")
+            t.expectEqual(SelectionReader.resolve(axText: nil, copiedText: nil),
+                          SelectionReader.Selection(text: nil, mode: .insert),
+                          "nothing anywhere → insert")
+            t.expectEqual(SelectionReader.resolve(axText: nil, copiedText: ""),
+                          SelectionReader.Selection(text: nil, mode: .insert),
+                          "empty copy → insert")
+        }
+
         t.test("stripFences variants") { t in
             t.expectEqual(ClaudeService.stripFences("```\nhello\n```"), "hello", "plain fence")
             t.expectEqual(ClaudeService.stripFences("```swift\nlet x = 1\n```"),
