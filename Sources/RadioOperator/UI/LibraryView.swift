@@ -44,6 +44,7 @@ private struct DictationHistoryList: View {
     @State private var expanded: Set<Int64> = []
     @State private var query = ""
     @State private var confirmClear = false
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,7 +80,7 @@ private struct DictationHistoryList: View {
             }
         }
         .onAppear(perform: reload)
-        .onChange(of: query) { reload() }
+        .onChange(of: query) { reloadDebounced() }
         .confirmationDialog("Delete all dictation history?",
                             isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Delete All", role: .destructive) {
@@ -147,9 +148,35 @@ private struct DictationHistoryList: View {
         settings.data.holdHotkey.displayName.replacingOccurrences(of: "Hold ", with: "")
     }
 
+    /// Synchronous reload for direct actions (delete, clear, appear) where the
+    /// working set is already the capped recent() view.
     private func reload() {
+        searchTask?.cancel()
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         records = q.isEmpty ? HistoryStore.shared.recent() : HistoryStore.shared.search(query: q)
+    }
+
+    /// Debounced, off-main reload for typing. search() AES-decrypts rows until
+    /// it fills its cap, so on a large history it must not block the main thread
+    /// per keystroke. Coalesce mid-word keystrokes and run the scan on a
+    /// background task (HistoryStore is its own serialized queue; DictationRecord
+    /// is Sendable), then publish back on the main actor.
+    private func reloadDebounced() {
+        searchTask?.cancel()
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty {
+            records = HistoryStore.shared.recent()
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            if Task.isCancelled { return }
+            let hits = await Task.detached(priority: .userInitiated) {
+                HistoryStore.shared.search(query: q)
+            }.value
+            if Task.isCancelled { return }
+            records = hits
+        }
     }
 
     private struct DayGroup {

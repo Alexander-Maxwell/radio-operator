@@ -83,11 +83,19 @@ final class HistoryStore: @unchecked Sendable {
     /// existence probe. Not gated on `user_version` — that would strand rows
     /// written plaintext during a Keychain-unavailable session in a db already
     /// stamped "encrypted".
+    private func schemaVersionLocked() -> Int32 {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "PRAGMA user_version", -1, &stmt, nil) == SQLITE_OK,
+              sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
+        return sqlite3_column_int(stmt, 0)
+    }
+
     private func migrateLocked() {
         guard let db, let cipher else { return }
 
-        // Cheap existence probe first — the common (all-encrypted) case does no
-        // table scan and no VACUUM.
+        // Cheap existence probe first — the common (all-encrypted, stamped) case
+        // does no table scan and no VACUUM.
         var probe: OpaquePointer?
         var hasPlaintext = false
         if sqlite3_prepare_v2(db, "SELECT EXISTS(SELECT 1 FROM dictations WHERE typeof(raw) = 'text')",
@@ -95,9 +103,16 @@ final class HistoryStore: @unchecked Sendable {
             hasPlaintext = sqlite3_column_int(probe, 0) == 1
         }
         sqlite3_finalize(probe)
-        guard hasPlaintext else { return }
 
-        // Collect plaintext rows.
+        // user_version is stamped to 1 only AFTER a successful scrub VACUUM.
+        // So version 0 with all-BLOB rows means a prior migration COMMITted but
+        // crashed before VACUUM — legacy plaintext pre-images may still sit in
+        // freed pages. Run the final VACUUM in that case too, not just when
+        // TEXT rows remain.
+        let needsScrub = hasPlaintext || schemaVersionLocked() < 1
+        guard needsScrub else { return }
+
+        // Collect plaintext rows (empty when this is only a crash-recovery scrub).
         var rows: [(Int64, String, String)] = []
         var sel: OpaquePointer?
         guard sqlite3_prepare_v2(db, "SELECT id, raw, cleaned FROM dictations WHERE typeof(raw) = 'text'",
@@ -115,42 +130,51 @@ final class HistoryStore: @unchecked Sendable {
         }
         sqlite3_finalize(sel)
 
-        // Keep the plaintext pre-images off disk: the rollback journal would
-        // otherwise leave old page contents in unlinked blocks. MEMORY journaling
-        // trades crash-durability of this one migration for that guarantee; the
-        // sweep is idempotent, so a crash mid-migration simply retries next open.
-        exec("PRAGMA journal_mode=MEMORY")
-        exec("BEGIN")
-        var failed = false
-        for (id, raw, cleaned) in rows {
-            guard let rawBlob = cipher.seal(raw), let cleanedBlob = cipher.seal(cleaned) else {
-                failed = true
-                break
+        if !rows.isEmpty {
+            // Keep the plaintext pre-images off disk: the rollback journal would
+            // otherwise leave old page contents in unlinked blocks. MEMORY
+            // journaling trades crash-durability of this one migration for that
+            // guarantee; the sweep is idempotent, so a crash mid-migration simply
+            // retries next open.
+            exec("PRAGMA journal_mode=MEMORY")
+            exec("BEGIN")
+            var failed = false
+            for (id, raw, cleaned) in rows {
+                guard let rawBlob = cipher.seal(raw), let cleanedBlob = cipher.seal(cleaned) else {
+                    failed = true
+                    break
+                }
+                var up: OpaquePointer?
+                guard sqlite3_prepare_v2(db, "UPDATE dictations SET raw = ?, cleaned = ? WHERE id = ?",
+                                         -1, &up, nil) == SQLITE_OK else {
+                    failed = true
+                    break
+                }
+                bindBlob(up, 1, rawBlob)
+                bindBlob(up, 2, cleanedBlob)
+                sqlite3_bind_int64(up, 3, id)
+                if sqlite3_step(up) != SQLITE_DONE { failed = true }
+                sqlite3_finalize(up)
+                if failed { break }
             }
-            var up: OpaquePointer?
-            guard sqlite3_prepare_v2(db, "UPDATE dictations SET raw = ?, cleaned = ? WHERE id = ?",
-                                     -1, &up, nil) == SQLITE_OK else {
-                failed = true
-                break
+            if failed {
+                exec("ROLLBACK")
+                exec("PRAGMA journal_mode=DELETE")
+                NSLog("HistoryStore: encryption sweep failed — rows left as-is, will retry next open")
+                return
             }
-            bindBlob(up, 1, rawBlob)
-            bindBlob(up, 2, cleanedBlob)
-            sqlite3_bind_int64(up, 3, id)
-            if sqlite3_step(up) != SQLITE_DONE { failed = true }
-            sqlite3_finalize(up)
-            if failed { break }
-        }
-        if failed {
-            exec("ROLLBACK")
+            exec("COMMIT")
             exec("PRAGMA journal_mode=DELETE")
-            NSLog("HistoryStore: encryption sweep failed — rows left as-is, will retry next open")
-            return
         }
-        exec("COMMIT")
-        exec("PRAGMA user_version = 1")
-        // Rewrite the file so freed pages holding plaintext are destroyed.
+
+        // Rewrite the file so freed pages holding plaintext (this sweep's, plus
+        // any legacy pre-images from the v0.2.0 build's DELETE-journaled writes)
+        // are destroyed. Stamp user_version to 1 ONLY after VACUUM succeeds — so
+        // a crash between the COMMIT above and this VACUUM leaves version 0 and
+        // re-enters the scrub (via `schemaVersionLocked() < 1`) on the next open
+        // even though every row is already BLOB.
         exec("VACUUM")
-        exec("PRAGMA journal_mode=DELETE")
+        exec("PRAGMA user_version = 1")
     }
 
     // MARK: - Column encode/decode

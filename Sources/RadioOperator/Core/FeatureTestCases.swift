@@ -50,12 +50,23 @@ enum HistoryStoreTestCases {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("ro-history-\(UUID().uuidString).sqlite")
             defer { try? FileManager.default.removeItem(at: url) }
-            // Era 1: no key (legacy plaintext store).
+            // Era 1: no key (legacy plaintext store). Churn — write many rows
+            // then delete most — so plaintext lands in freed pages, not just the
+            // live rows, exercising VACUUM (not just secure_delete on the UPDATE).
             var legacy: HistoryStore? = HistoryStore(path: url.path, cipher: nil)
+            for i in 0..<40 {
+                legacy?.record(raw: "churn-secret-\(i)", cleaned: "churn-secret-\(i)",
+                               appBundleID: nil, durationMs: 1, pasteOK: true)
+            }
             legacy?.record(raw: "migrate-me-alpha", cleaned: "migrate-me-alpha",
                            appBundleID: nil, durationMs: 1, pasteOK: true)
             legacy?.record(raw: "migrate-me-beta", cleaned: "migrate-me-beta",
                            appBundleID: nil, durationMs: 1, pasteOK: true)
+            legacy?.prune(olderThan: Date(timeIntervalSinceNow: 3600)) // deletes the 42 rows... keep alpha/beta
+            legacy?.record(raw: "migrate-me-alpha", cleaned: "migrate-me-alpha",
+                           appBundleID: nil, durationMs: 1, pasteOK: true, at: Date(timeIntervalSinceNow: 7200))
+            legacy?.record(raw: "migrate-me-beta", cleaned: "migrate-me-beta",
+                           appBundleID: nil, durationMs: 1, pasteOK: true, at: Date(timeIntervalSinceNow: 7200))
             t.expect(fileContains(url, "migrate-me-alpha"), "v0 file holds plaintext")
             legacy = nil // close the first connection before migrating
 
@@ -63,9 +74,10 @@ enum HistoryStoreTestCases {
             let store = HistoryStore(path: url.path,
                                      cipher: HistoryCipher(key: SymmetricKey(size: .bits256)))
             let rows = store.recent()
-            t.expectEqual(rows.count, 2, "both rows survive migration")
+            t.expectEqual(rows.count, 2, "both live rows survive migration")
             t.expect(rows.contains { $0.cleanedText == "migrate-me-alpha" }, "content readable after migration")
             t.expect(!fileContains(url, "migrate-me-alpha"), "plaintext destroyed by migration VACUUM")
+            t.expect(!fileContains(url, "churn-secret-"), "freed-page plaintext residue destroyed too")
             t.expectEqual(store.search(query: "beta").count, 1, "search works over migrated rows")
         }
 

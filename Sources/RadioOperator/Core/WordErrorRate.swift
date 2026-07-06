@@ -42,7 +42,12 @@ enum WordErrorRate {
     /// the way the engine under test emits them (see the README manifest note);
     /// "25" vs "twenty five" counts as an error by design.
     static func normalize(_ s: String) -> [String] {
-        let strip = CharacterSet.punctuationCharacters.union(.symbols)
+        // Also strip nonspacing/format marks (combining marks, ZWJ, and emoji
+        // variation selectors like U+FE0F) so an orphaned selector can't survive
+        // edge-trimming as a phantom token and inflate the count.
+        let strip = CharacterSet.punctuationCharacters
+            .union(.symbols)
+            .union(.nonBaseCharacters)
         let separators = CharacterSet.whitespacesAndNewlines
             .union(CharacterSet(charactersIn: "-/"))
         return s.lowercased()

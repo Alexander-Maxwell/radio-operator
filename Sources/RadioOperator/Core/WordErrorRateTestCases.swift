@@ -76,6 +76,13 @@ enum WordErrorRateTestCases {
             t.expectEqual(slash.errors, 0, "slash split matches")
         }
 
+        t.test("emoji and combining marks don't leak phantom tokens") { t in
+            let s = WordErrorRate.score(reference: "the mic is on", hypothesis: "the mic 🎙️ is on")
+            t.expectEqual(s.errors, 0, "emoji dropped, not counted as an inserted word")
+            let vs = WordErrorRate.score(reference: "ready", hypothesis: "ready ✅")
+            t.expectEqual(vs.errors, 0, "trailing emoji with variation selector dropped")
+        }
+
         t.test("numerals compared as-is per documented policy") { t in
             // Digits vs spelled-out numbers ARE counted (see normalize() note).
             let s = WordErrorRate.score(reference: "25 dollars", hypothesis: "twenty five dollars")

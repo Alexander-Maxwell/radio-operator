@@ -48,22 +48,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Honor the saved appearance preference across every window.
         Appearance.apply(SettingsStore.shared.data.appearance)
 
-        // 24-hour retention: prune anything a crash or sleep let linger.
-        if SettingsStore.shared.data.historyRetention == .day {
-            HistoryStore.shared.prune(olderThan: Date(timeIntervalSinceNow: -86_400))
-            NotesStore.pruneDictationLogs(in: NotesStore.shared.dictationsFolder, keepingDays: 1)
-        }
-
         // Pre-warm the speech format query so the first hotkey press is fast.
         let prewarmLocale = SettingsStore.shared.data.transcriptionLocale
         Task.detached { _ = await Transcriber.preferredFormat(locale: prewarmLocale) }
 
         // Warm the history store off the main thread so the Keychain read +
-        // one-time encryption sweep + VACUUM never run on the MainActor inside
-        // the first post-dictation record(). The store is internally
-        // serialized, so a concurrent first dictation just waits on its queue.
-        if SettingsStore.shared.data.historyRetention != .never {
-            Task.detached(priority: .utility) { _ = HistoryStore.shared.count() }
+        // one-time encryption sweep + VACUUM never run on the MainActor. The
+        // 24-hour retention prune materializes the store too, so fold it into the
+        // same detached task — otherwise it would force store init back onto the
+        // MainActor. The store is internally serialized, so a concurrent first
+        // dictation just waits on its queue.
+        let retention = SettingsStore.shared.data.historyRetention
+        let dictationsFolder = NotesStore.shared.dictationsFolder
+        if retention != .never {
+            Task.detached(priority: .utility) {
+                if retention == .day {
+                    HistoryStore.shared.prune(olderThan: Date(timeIntervalSinceNow: -86_400))
+                    NotesStore.pruneDictationLogs(in: dictationsFolder, keepingDays: 1)
+                } else {
+                    _ = HistoryStore.shared.count()
+                }
+            }
         }
 
         // Library empty-state "Start a Meeting" button.
