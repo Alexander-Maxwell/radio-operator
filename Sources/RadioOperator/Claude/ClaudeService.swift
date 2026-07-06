@@ -153,9 +153,17 @@ final class ClaudeService: @unchecked Sendable {
     /// Generates the meeting summary block. Returns markdown starting at
     /// "## Summary".
     func summarize(transcriptMarkdown: String, title: String, userNotes: String = "") async throws -> String {
-        let template = await MainActor.run { SettingsStore.shared.data.activeSummaryTemplateBody }
+        // Styles touch summaries only behind the explicit default-off toggle,
+        // and a summary has no target app, so only a "*" rule can apply.
+        let (template, style) = await MainActor.run { () -> (String, String?) in
+            let data = SettingsStore.shared.data
+            let style = data.applyStyleToSummaries
+                ? AppRule.resolveStyle(bundleID: nil, rules: data.appRules) : nil
+            return (data.activeSummaryTemplateBody, style)
+        }
         let prompt = ClaudeService.summaryPrompt(
-            template: template, title: title, userNotes: userNotes, transcript: transcriptMarkdown)
+            template: template, title: title, userNotes: userNotes,
+            transcript: transcriptMarkdown, style: style)
         let out = try await run(prompt: prompt, timeout: 120)
         guard !out.isEmpty else { throw ClaudeError.noOutput }
         return out
@@ -165,10 +173,17 @@ final class ClaudeService: @unchecked Sendable {
     /// testable. A blank template falls back to the built-in default, so a user
     /// who clears the field still gets a well-formed summary. The transcript is
     /// always framed as DATA, never instructions (prompt-injection guard).
+    /// `style` is the user's own opt-in AppRule text, never derived from the
+    /// transcript.
     nonisolated static func summaryPrompt(template: String, title: String,
-                                          userNotes: String, transcript: String) -> String {
+                                          userNotes: String, transcript: String,
+                                          style: String? = nil) -> String {
         let spec = template.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? SettingsData.defaultSummaryTemplate : template
+        var styleLine = ""
+        if let style, !style.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            styleLine = "\nWrite the summary in this style: \(style)"
+        }
         var notesBlock = ""
         if !userNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             notesBlock = """
@@ -190,7 +205,7 @@ final class ClaudeService: @unchecked Sendable {
 
         \(spec)
 
-        Meeting title: \(title)\(notesBlock)
+        Meeting title: \(title)\(styleLine)\(notesBlock)
 
         ===TRANSCRIPT===
         \(transcript)
@@ -219,8 +234,13 @@ final class ClaudeService: @unchecked Sendable {
     /// inherited — no new LLM entry surface.
     func transform(selection: String?, instruction: String,
                    appBundleID: String?) async throws -> String {
+        // Per-app style resolution happens HERE, on the Command Mode path
+        // only — dictation never touches AppRules (hot path stays zero-work).
+        let rules = await MainActor.run { SettingsStore.shared.data.appRules }
+        let style = AppRule.resolveStyle(bundleID: appBundleID, rules: rules)
         let prompt = ClaudeService.transformPrompt(
-            selection: selection, instruction: instruction, appBundleID: appBundleID)
+            selection: selection, instruction: instruction, appBundleID: appBundleID,
+            style: style)
         let out = try await run(prompt: prompt, timeout: 60)
         let stripped = ClaudeService.stripFences(out)
         guard !stripped.isEmpty else { throw ClaudeError.noOutput }
@@ -230,10 +250,16 @@ final class ClaudeService: @unchecked Sendable {
     /// Builds the Command Mode prompt. Pure and nonisolated so it is unit
     /// testable. The selection is DATA to transform, never instructions to
     /// follow; the spoken instruction is the only command channel
-    /// (prompt-injection guard, same posture as `summaryPrompt`).
+    /// (prompt-injection guard, same posture as `summaryPrompt`). `style` is
+    /// the user's own AppRule text for the target app, never derived from
+    /// the selection.
     nonisolated static func transformPrompt(selection: String?, instruction: String,
-                                            appBundleID: String?) -> String {
-        let appLine = appBundleID.map { "\nThe result will be pasted into \($0)." } ?? ""
+                                            appBundleID: String?,
+                                            style: String? = nil) -> String {
+        var appLine = appBundleID.map { "\nThe result will be pasted into \($0)." } ?? ""
+        if let style, !style.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            appLine += "\nMatch this writing style for the destination app: \(style)"
+        }
         guard let selection, !selection.isEmpty else {
             return """
             You are a text tool. The user spoke an instruction describing text to \

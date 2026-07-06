@@ -85,6 +85,51 @@ struct NamedTemplate: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// A per-app writing style, keyed on the target app's bundle id (the same
+/// identifier dictation history already records). Resolved ONLY for Command
+/// Mode transforms and — behind an explicit default-off toggle — meeting
+/// summaries. NEVER for dictation: the dictation hot path is deterministic
+/// and gains zero work from these rules existing.
+struct AppRule: Codable, Identifiable, Hashable, Sendable {
+    var id: UUID
+    /// Exact bundle id (case-insensitive), or "*" to match any app.
+    var bundleID: String
+    /// Free-text style instruction, e.g. "formal, no emoji, short sentences".
+    var style: String
+
+    init(id: UUID = UUID(), bundleID: String, style: String) {
+        self.id = id
+        self.bundleID = bundleID
+        self.style = style
+    }
+
+    static let wildcard = "*"
+
+    /// Pure resolution: first exact (case-insensitive) bundle match wins,
+    /// then the first "*" rule; rules with a blank style never match. A nil
+    /// bundle id (unknown target, meeting summaries) can only match "*".
+    static func resolveStyle(bundleID: String?, rules: [AppRule]) -> String? {
+        let usable = rules.filter {
+            !$0.style.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if let bundleID {
+            let needle = bundleID.trimmingCharacters(in: .whitespaces).lowercased()
+            if !needle.isEmpty,
+               let exact = usable.first(where: {
+                   $0.bundleID.trimmingCharacters(in: .whitespaces).lowercased() == needle
+               }) {
+                return exact.style
+            }
+        }
+        if let wild = usable.first(where: {
+            $0.bundleID.trimmingCharacters(in: .whitespaces) == wildcard
+        }) {
+            return wild.style
+        }
+        return nil
+    }
+}
+
 enum ClaudeMode: String, Codable, CaseIterable, Sendable {
     case cli
     case api
@@ -160,6 +205,12 @@ struct SettingsData: Codable, Sendable {
     ]
     /// Which template summaries use; nil or unknown resolves to the first.
     var selectedTemplateID: UUID? = nil
+
+    /// Per-app writing styles (Command Mode + opt-in summaries; never dictation).
+    var appRules: [AppRule] = []
+    /// When on, a "*" AppRule's style also shapes meeting summaries. Default
+    /// OFF — summaries stay style-free unless explicitly opted in.
+    var applyStyleToSummaries: Bool = false
     /// Persistent UID of the preferred input device; nil = system default.
     var micDeviceUID: String? = nil
     var historyRetention: HistoryRetention = .keep
@@ -276,6 +327,7 @@ struct SettingsData: Codable, Sendable {
         case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
         case autoSummarize, appearance, summaryTemplates, selectedTemplateID
+        case appRules, applyStyleToSummaries
         case transcriptionLocaleIdentifier
         case autoStartOnMic, micEchoCancellation
         case commandHotkey
@@ -323,6 +375,9 @@ struct SettingsData: Codable, Sendable {
             summaryTemplates = d.summaryTemplates
         }
         selectedTemplateID = (try? c.decodeIfPresent(UUID.self, forKey: .selectedTemplateID)) ?? nil
+        appRules = (try? c.decodeIfPresent([AppRule].self, forKey: .appRules)) ?? d.appRules
+        applyStyleToSummaries = (try? c.decodeIfPresent(Bool.self, forKey: .applyStyleToSummaries))
+            ?? d.applyStyleToSummaries
         transcriptionLocaleIdentifier = (try? c.decodeIfPresent(String.self, forKey: .transcriptionLocaleIdentifier))
             ?? d.transcriptionLocaleIdentifier
         autoStartOnMic = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartOnMic)) ?? d.autoStartOnMic

@@ -736,6 +736,33 @@ private struct IntelligencePane: View {
                 }
                 .padding(14)
             }
+
+            Card(title: "Per-app writing styles", hint: "Command Mode + opt-in summaries · never dictation") {
+                VStack(spacing: 0) {
+                    ForEach($settings.data.appRules) { $rule in
+                        HStack(spacing: 8) {
+                            TextField("Bundle ID (e.g. com.apple.mail) or *", text: $rule.bundleID)
+                                .frame(maxWidth: 240)
+                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                            TextField("Style (e.g. formal, no emoji, short sentences)", text: $rule.style)
+                            editRemove { settings.data.appRules.removeAll { $0.id == rule.id } }
+                        }
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                    }
+                    if settings.data.appRules.isEmpty {
+                        emptyHint("No rules yet. Add one to give Command Mode a writing style per app; use * to match every app.")
+                    }
+                    editAdd("Add rule") {
+                        settings.data.appRules.append(AppRule(bundleID: "", style: ""))
+                    }
+                    Divider()
+                    SettingRow(title: "Apply to meeting summaries",
+                               desc: "Off by default. When on, a * rule's style also shapes meeting summaries. Dictation is never styled — it stays deterministic.") {
+                        Toggle("", isOn: $settings.data.applyStyleToSummaries).labelsHidden()
+                    }
+                }
+            }
         }
         .onAppear { apiKeyDraft = settings.apiKey ?? "" }
     }
