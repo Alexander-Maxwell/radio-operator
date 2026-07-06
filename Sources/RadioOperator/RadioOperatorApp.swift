@@ -19,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var cancellables = Set<AnyCancellable>()
     private var elapsedMenuTimer: Timer?
+    private var micActivityMonitor: MicActivityMonitor?
+
+    /// Posted when another app starts using the mic (a call begins). Nonisolated
+    /// so the mic monitor's `@Sendable` callback can reference it off the main actor.
+    nonisolated static let micActivatedNote = Notification.Name("radiooperator.micActivated")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -40,6 +45,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Route capture to the user's chosen microphone (nil = system default).
         MicCapture.shared.preferredDeviceUID = SettingsStore.shared.data.micDeviceUID
+
+        // Hardware echo cancellation on the mic mirrors the setting; applied on
+        // the next engine start.
+        MicCapture.shared.voiceProcessing = SettingsStore.shared.data.micEchoCancellation
+
+        // Auto-start a meeting when another app grabs the mic (a call begins).
+        let monitor = MicActivityMonitor()
+        monitor.onActivated = {
+            NotificationCenter.default.post(name: AppDelegate.micActivatedNote, object: nil)
+        }
+        monitor.start()
+        micActivityMonitor = monitor
+        NotificationCenter.default.addObserver(
+            forName: AppDelegate.micActivatedNote, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.autoStartMeetingIfIdle() }
+        }
 
         // Reconcile the login item with the setting (registration can be
         // dropped externally via System Settings).
@@ -208,6 +230,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MeetingController.shared.start()
             openMeetingWindow()
             requestNotificationAuthIfNeeded()
+        }
+    }
+
+    /// Mic-activity auto-start. Fires on the idle→running edge; we skip when our
+    /// own capture is the cause (dictation/meeting) so it never self-triggers,
+    /// then re-confirm a beat later to ignore transient mic probes.
+    @MainActor private func autoStartMeetingIfIdle() {
+        guard MicActivityMonitor.shouldAutoStart(
+            settingEnabled: SettingsStore.shared.data.autoStartOnMic,
+            weAreCapturing: MicCapture.shared.isCapturing,
+            meetingActive: MeetingController.shared.isActive) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self,
+                  MicActivityMonitor.shouldAutoStart(
+                    settingEnabled: SettingsStore.shared.data.autoStartOnMic,
+                    weAreCapturing: MicCapture.shared.isCapturing,
+                    meetingActive: MeetingController.shared.isActive),
+                  MicActivityMonitor.isRunning(MicActivityMonitor.currentDefaultInput())
+            else { return }
+            self.toggleMeeting()
         }
     }
 

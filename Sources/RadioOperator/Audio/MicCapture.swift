@@ -23,8 +23,35 @@ final class MicCapture: @unchecked Sendable {
     private(set) var lastBufferAt: Date?
     private var configObserver: NSObjectProtocol?
     private var _preferredDeviceUID: String?
+    private var _voiceProcessing = true
 
     private init() {}
+
+    /// True while at least one subscriber is capturing — i.e. the mic is hot
+    /// *because of us* (dictation or a meeting). The auto-start monitor reads
+    /// this to avoid triggering on our own capture.
+    var isCapturing: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !subscribers.isEmpty
+    }
+
+    /// Enables Apple's Voice-Processing I/O (hardware AEC + noise suppression)
+    /// on the input, so far-end audio leaking from speakers is cancelled before
+    /// transcription. Applied on the next engine start; set it from the main
+    /// actor to mirror the `micEchoCancellation` setting.
+    var voiceProcessing: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _voiceProcessing
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _voiceProcessing = newValue
+        }
+    }
 
     /// UID of the input device to capture from (nil = system default).
     /// Changing it while capturing rebuilds the engine on the new device;
@@ -78,10 +105,31 @@ final class MicCapture: @unchecked Sendable {
 
     private func startEngineLocked() throws {
         guard let outputFormat else { return }
+        do {
+            try buildEngineLocked(outputFormat: outputFormat, voiceProcessing: _voiceProcessing)
+        } catch {
+            // Voice processing can be incompatible with some device chains
+            // (aggregates, certain USB interfaces). It must never break plain
+            // capture — fall back to an unprocessed engine.
+            if _voiceProcessing {
+                NSLog("MicCapture: voice-processing start failed (\(error.localizedDescription)) — retrying without it")
+                try buildEngineLocked(outputFormat: outputFormat, voiceProcessing: false)
+            } else {
+                throw error
+            }
+        }
+    }
+
+    private func buildEngineLocked(outputFormat: AVAudioFormat, voiceProcessing: Bool) throws {
         // Fresh engine every start: retargeting a reused engine's input
         // device is unreliable.
         engine = AVAudioEngine()
         let input = engine.inputNode
+        // Enable AEC before touching the format/device — it reconfigures the
+        // input unit.
+        if voiceProcessing {
+            try input.setVoiceProcessingEnabled(true)
+        }
         applyPreferredDeviceLocked(to: input)
         let inFormat = input.inputFormat(forBus: 0)
         guard inFormat.sampleRate > 0 else {

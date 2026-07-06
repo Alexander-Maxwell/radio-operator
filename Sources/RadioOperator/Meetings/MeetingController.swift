@@ -60,9 +60,15 @@ final class MeetingController: ObservableObject {
         summaryPhase = .none
         userNotes = ""
         let echoMode = SettingsStore.shared.data.echoGuardMode
+        // Echo guard turns on whenever the far side can leak from the speakers
+        // back into the mic — i.e. any output that isn't confidently headphones
+        // (built-in speakers, external/USB/HDMI/Bluetooth). The old check only
+        // recognized built-in speakers, so external speakers ran with no guard.
+        let output = AudioOutputDevices.defaultOutput()
+        let onSpeakers = !(output?.isHeadphones ?? false)
         assembler = TranscriptAssembler(
             mergeWindow: 2.0,
-            echoGuard: echoMode.resolved(onSpeakers: false))
+            echoGuard: echoMode.resolved(onSpeakers: onSpeakers))
         let start = Date()
         startedAt = start
 
@@ -80,12 +86,17 @@ final class MeetingController: ObservableObject {
             title: "Meeting in progress", start: start, durationSeconds: 0,
             utterances: [], degradedMicOnly: false)
 
-        // Auto mode enables echo guard when the output is speakers (own voice
-        // leaks into the system tap through the room). On/Off resolved above.
-        if echoMode == .auto, MeetingController.defaultOutputIsBuiltInSpeakers() {
-            assembler.echoGuard = true
+        // Speakers + Auto: tell the user echo filtering kicked in and nudge
+        // toward headphones for the cleanest transcript.
+        if assembler.echoGuard, echoMode == .auto, onSpeakers {
             banner = "Speakers detected — echo filtering on. Headphones give the cleanest transcript."
         }
+
+        // Start-time device diagnostics: the one line that tells us after the
+        // fact whether a garbled transcript was speaker bleed or a routing
+        // issue — mic + output device, output transport, and whether AEC ran.
+        let input = AudioInputDevices.defaultInput()
+        NSLog("RadioOperator meeting start — mic=[\(input?.name ?? "?")] out=[\(output?.name ?? "?") · \(AudioOutputDevices.transportLabel(output?.transport ?? 0)) · headphones=\(output?.isHeadphones ?? false)] echoGuard=\(assembler.echoGuard) aec=\(SettingsStore.shared.data.micEchoCancellation)")
 
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tickElapsed() }
@@ -372,28 +383,6 @@ final class MeetingController: ObservableObject {
     }
 
     // MARK: - Helpers
-
-    static func defaultOutputIsBuiltInSpeakers() -> Bool {
-        var deviceID = AudioObjectID(kAudioObjectUnknown)
-        var size = UInt32(MemoryLayout<AudioObjectID>.size)
-        var addr = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
-                                         &addr, 0, nil, &size, &deviceID) == noErr,
-              deviceID != kAudioObjectUnknown else { return false }
-        var transport: UInt32 = 0
-        var tSize = UInt32(MemoryLayout<UInt32>.size)
-        var tAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyTransportType,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectGetPropertyData(deviceID, &tAddr, 0, nil, &tSize, &transport) == noErr else {
-            return false
-        }
-        return transport == kAudioDeviceTransportTypeBuiltIn
-    }
 
     static func notify(title: String, body: String) {
         let center = UNUserNotificationCenter.current()

@@ -563,17 +563,30 @@ private struct MeetingsPane: View {
 
             Card(title: "Capture") {
                 VStack(spacing: 0) {
+                    SettingRow(title: "Auto-start on call",
+                               desc: "Begins capture the moment another app uses your mic — Zoom, Meet, Teams, Slack, FaceTime. Your own dictation never triggers it.") {
+                        Toggle("", isOn: $settings.data.autoStartOnMic).labelsHidden()
+                    }
+                    Divider()
                     SettingRow(title: "Auto-summarize on stop",
                                desc: "Claude drafts Summary, Decisions, and Action Items when you end the meeting.") {
                         Toggle("", isOn: $settings.data.autoSummarize).labelsHidden()
                     }
                     Divider()
                     SettingRow(title: "Echo guard",
-                               desc: "Filters your own voice out of the “Them” channel. Auto turns on with speakers; headphones give the cleanest transcript.") {
+                               desc: "Filters the far side out of the “Me” channel. Auto turns on for any speakers (built-in or external); headphones give the cleanest transcript.") {
                         Picker("", selection: $settings.data.echoGuardMode) {
                             ForEach(EchoGuardMode.allCases, id: \.self) { Text($0.displayName).tag($0) }
                         }
                         .pickerStyle(.segmented).labelsHidden().frame(width: 180)
+                    }
+                    Divider()
+                    SettingRow(title: "Cancel speaker echo",
+                               desc: "Hardware echo cancellation removes the far side coming through your speakers before it’s transcribed, so it isn’t mislabeled as you. Takes effect next meeting.") {
+                        Toggle("", isOn: Binding(
+                            get: { settings.data.micEchoCancellation },
+                            set: { settings.data.micEchoCancellation = $0
+                                   MicCapture.shared.voiceProcessing = $0 })).labelsHidden()
                     }
                     Divider()
                     SettingRow(title: "Keep meeting audio",

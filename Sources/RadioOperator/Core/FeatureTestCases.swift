@@ -300,6 +300,34 @@ enum MiscFeatureTestCases {
             t.expect(!EchoGuardMode.auto.resolved(onSpeakers: false), "auto false off speakers")
         }
 
+        t.test("output headphones classification gates the echo guard") { t in
+            let hdpn: UInt32 = 0x6864_706E // 'hdpn' — built-in headphone jack
+            let ispk: UInt32 = 0x6973_706B // 'ispk' — built-in speaker
+            t.expect(AudioOutputDevices.classifyHeadphones(dataSource: hdpn), "headphone jack = headphones")
+            t.expect(!AudioOutputDevices.classifyHeadphones(dataSource: ispk), "built-in speaker = not headphones")
+            // External/USB/HDMI/Bluetooth report no 'hdpn' source, so they must
+            // read as NOT headphones — the exact case the old gating missed.
+            t.expect(!AudioOutputDevices.classifyHeadphones(dataSource: nil), "unknown output = not headphones")
+            // Wired through to the guard: speakers (any kind) → guard on;
+            // headphones → guard off.
+            let extSpeakerOnSpeakers = !AudioOutputDevices.classifyHeadphones(dataSource: nil)
+            t.expect(EchoGuardMode.auto.resolved(onSpeakers: extSpeakerOnSpeakers), "auto + external speakers → guard on")
+            let jackOnSpeakers = !AudioOutputDevices.classifyHeadphones(dataSource: hdpn)
+            t.expect(!EchoGuardMode.auto.resolved(onSpeakers: jackOnSpeakers), "auto + headphones → guard off")
+        }
+
+        t.test("mic auto-start decision") { t in
+            typealias M = MicActivityMonitor
+            t.expect(M.shouldAutoStart(settingEnabled: true, weAreCapturing: false, meetingActive: false),
+                     "idle + another app grabs mic → start")
+            t.expect(!M.shouldAutoStart(settingEnabled: false, weAreCapturing: false, meetingActive: false),
+                     "feature off → never start")
+            t.expect(!M.shouldAutoStart(settingEnabled: true, weAreCapturing: true, meetingActive: false),
+                     "our own dictation/meeting is the cause → no self-trigger")
+            t.expect(!M.shouldAutoStart(settingEnabled: true, weAreCapturing: false, meetingActive: true),
+                     "a meeting is already live → no double-start")
+        }
+
         t.test("summary prompt uses default spec when template blank") { t in
             let p = ClaudeService.summaryPrompt(template: "   ", title: "Budget Sync",
                                                 userNotes: "", transcript: "Me: hi there")

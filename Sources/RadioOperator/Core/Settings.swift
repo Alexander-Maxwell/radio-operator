@@ -141,6 +141,14 @@ struct SettingsData: Codable, Sendable {
     var micDeviceUID: String? = nil
     var historyRetention: HistoryRetention = .keep
     var launchAtLogin: Bool = false
+    /// Auto-start a meeting the instant another app grabs the microphone
+    /// (Zoom, Meet, Teams, Slack, FaceTime). We only fire while idle, so our
+    /// own dictation or meeting capture never self-triggers.
+    var autoStartOnMic: Bool = true
+    /// Hardware echo cancellation (Apple Voice-Processing I/O) on the mic, so
+    /// the far side coming through the speakers is removed before transcription
+    /// and never mislabeled as "Me". Headphones make it moot; leave it on.
+    var micEchoCancellation: Bool = true
     /// BCP-47 identifier for the transcription language. No picker UI yet
     /// (D3: English-only for now) — parameterized so the engine isn't
     /// hardcoded and a future picker is pure UI.
@@ -179,6 +187,7 @@ struct SettingsData: Codable, Sendable {
         case historyRetention, launchAtLogin
         case autoSummarize, appearance, summaryTemplate
         case transcriptionLocaleIdentifier
+        case autoStartOnMic, micEchoCancellation
     }
 
     init(from decoder: Decoder) throws {
@@ -204,6 +213,8 @@ struct SettingsData: Codable, Sendable {
         summaryTemplate = (try? c.decodeIfPresent(String.self, forKey: .summaryTemplate)) ?? d.summaryTemplate
         transcriptionLocaleIdentifier = (try? c.decodeIfPresent(String.self, forKey: .transcriptionLocaleIdentifier))
             ?? d.transcriptionLocaleIdentifier
+        autoStartOnMic = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartOnMic)) ?? d.autoStartOnMic
+        micEchoCancellation = (try? c.decodeIfPresent(Bool.self, forKey: .micEchoCancellation)) ?? d.micEchoCancellation
     }
 }
 
