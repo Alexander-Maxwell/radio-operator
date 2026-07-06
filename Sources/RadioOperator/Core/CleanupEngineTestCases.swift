@@ -178,7 +178,16 @@ enum CleanupEngineTestCases {
             t.expectEqual(CleanupEngine.normalize("he said.Then left"), "He said. Then left", "space after period")
             t.expectEqual(CleanupEngine.normalize("it costs 5.50 total"), "It costs 5.50 total", "decimal untouched")
             t.expectEqual(CleanupEngine.normalize("visit example.com today"), "Visit example.com today", "domain untouched")
-            t.expectEqual(CleanupEngine.normalize("über cool"), "über cool", "non-ASCII start")
+            t.expectEqual(CleanupEngine.normalize("über cool"), "Über cool", "non-ASCII start capitalizes")
+        }
+
+        t.test("unicode-aware sentence capitalization") { t in
+            t.expectEqual(CleanupEngine.normalize("él dijo. hola"), "Él dijo. Hola", "accented starts capitalize")
+            t.expectEqual(CleanupEngine.normalize("ñandú corre"), "Ñandú corre", "ñ capitalizes")
+            t.expectEqual(CleanupEngine.normalize("5 items shipped. 3 remain"),
+                          "5 items shipped. 3 remain", "digit starts untouched")
+            t.expectEqual(CleanupEngine.normalize("☕️ first. ☕️ second"),
+                          "☕️ first. ☕️ second", "emoji starts untouched")
         }
 
         t.test("normalize preserves line breaks and collapses blank runs") { t in

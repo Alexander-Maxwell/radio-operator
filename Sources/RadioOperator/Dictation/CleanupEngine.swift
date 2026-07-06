@@ -277,9 +277,10 @@ enum CleanupEngine {
     }
 
     /// Uppercases the first letter of the line and of each sentence (after
-    /// . ! ? followed by a space) — only when that letter is lowercase ASCII,
-    /// so digits, emoji, and accented text are left alone. Quoted text gets
-    /// no special treatment beyond these mechanical rules.
+    /// . ! ? followed by a space) — only when that letter is a cased
+    /// lowercase character (Unicode-aware: "él" → "Él", "ñandú" → "Ñandú"),
+    /// so digits and emoji are left alone. Quoted text gets no special
+    /// treatment beyond these mechanical rules.
     private static func capitalizeSentences(_ line: String) -> String {
         guard !line.isEmpty else { return line }
         var out = ""
@@ -295,7 +296,7 @@ enum CleanupEngine {
             }
             if expectCapital, ch != " ", ch != "\t" {
                 expectCapital = false
-                if ch.isASCII, ch.isLowercase {
+                if ch.isLowercase {
                     out += ch.uppercased()
                     continue
                 }
