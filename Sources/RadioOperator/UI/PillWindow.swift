@@ -167,8 +167,9 @@ struct PillView: View {
 // MARK: - Mark with a subtle "listening" pulse
 
 /// The violet R-in-O mark, scaled/opacity-pulsed on the O ring (~1.7s loop)
-/// while live to reinforce "listening." Static under Reduce Motion.
-private struct MarkGlyph: View {
+/// while live to reinforce "listening." Static under Reduce Motion. Shared by
+/// the dictation pill and the meeting HUD.
+struct MarkGlyph: View {
     let size: CGFloat
     let live: Bool
 
@@ -204,6 +205,9 @@ struct FlowWave: View {
     var live: Bool = true
     var width: CGFloat = 124
     var height: CGFloat = 20
+    /// When set, the ribbons are shades of this single hue (a mono channel wave,
+    /// e.g. the meeting YOU/THEM meters). When nil, the brand multi-hue wave.
+    var tint: Color? = nil
 
     private var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -220,13 +224,25 @@ struct FlowWave: View {
         let yOff: CGFloat
     }
 
-    private let ribbons: [Ribbon] = [
+    private static let brandRibbons: [Ribbon] = [
         Ribbon(color: Color(red: 0.29, green: 0.25, blue: 0.63), amp: 0.62, freq: 1.4, speed: 0.30, phase: 0.0, w: 2.2, op: 0.32, yOff: -2.2), // indigo (back)
         Ribbon(color: Color(red: 0.42, green: 0.36, blue: 0.90), amp: 0.85, freq: 1.6, speed: 0.44, phase: 0.6, w: 2.0, op: 0.55, yOff:  1.3), // violet
         Ribbon(color: Color(red: 0.30, green: 0.62, blue: 0.71), amp: 0.72, freq: 1.5, speed: 0.52, phase: 1.2, w: 1.7, op: 0.50, yOff: -0.9), // teal
         Ribbon(color: Color(red: 0.56, green: 0.50, blue: 1.00), amp: 1.00, freq: 1.7, speed: 0.40, phase: 1.8, w: 1.8, op: 0.68, yOff:  2.2), // periwinkle (front)
         Ribbon(color: Color(red: 0.73, green: 0.67, blue: 1.00), amp: 0.50, freq: 1.9, speed: 0.58, phase: 2.4, w: 1.1, op: 0.55, yOff:  0.0), // lilac highlight
     ]
+
+    private var ribbons: [Ribbon] {
+        guard let tint else { return Self.brandRibbons }
+        // Mono channel wave: the tint at layered depths + a white crest highlight.
+        return [
+            Ribbon(color: tint,        amp: 0.62, freq: 1.4, speed: 0.30, phase: 0.0, w: 2.0, op: 0.22, yOff: -2.2),
+            Ribbon(color: tint,        amp: 0.85, freq: 1.6, speed: 0.44, phase: 0.6, w: 1.8, op: 0.42, yOff:  1.3),
+            Ribbon(color: tint,        amp: 0.72, freq: 1.5, speed: 0.52, phase: 1.2, w: 1.6, op: 0.34, yOff: -0.9),
+            Ribbon(color: tint,        amp: 1.00, freq: 1.7, speed: 0.40, phase: 1.8, w: 1.7, op: 0.60, yOff:  2.2),
+            Ribbon(color: Color.white, amp: 0.50, freq: 1.9, speed: 0.58, phase: 2.4, w: 1.0, op: 0.35, yOff:  0.0),
+        ]
+    }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || !live)) { tl in
@@ -286,7 +302,7 @@ struct FlowWave: View {
     }
 
     private func drawSparkle(_ ctx: GraphicsContext, _ size: CGSize, _ t: Double) {
-        guard live else { return }
+        guard live, tint == nil else { return }        // sparkle is brand-only
         let carrier = ribbons[3]
         let gold = Color(red: 0.86, green: 0.80, blue: 0.55)
         let count = 44

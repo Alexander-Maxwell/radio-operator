@@ -24,7 +24,7 @@ final class RecordingHUDController: ObservableObject {
         guard let panel else { return }
         // Fresh meeting: park at the default corner; the geometry callback
         // trues up the exact size on first layout, bottom-right anchored.
-        let estimate = collapsed ? NSSize(width: 150, height: 40)
+        let estimate = collapsed ? NSSize(width: 140, height: 36)
                                  : NSSize(width: 352, height: 286)
         if let screen = activeScreen() {
             let vis = screen.visibleFrame
@@ -176,9 +176,9 @@ struct RecordingHUDView: View {
     private func meterRow(_ label: String, _ color: Color, level: Float) -> some View {
         HStack(spacing: 11) {
             trackLabel(label, color)
-            LevelMeter(level: level, color: color, barCount: 52, height: 16)
+            FlowWave(level: level, live: true, width: 255, height: 22, tint: color)
         }
-        .frame(height: 20)
+        .frame(height: 22)
     }
 
     private func trackLabel(_ text: String, _ color: Color) -> some View {
@@ -287,30 +287,20 @@ struct RecordingHUDView: View {
 
     // MARK: Collapsed pill
 
+    /// Minimized state — matches the dictation pill: no chrome, just the mark +
+    /// a flowing wave (driven by whichever channel is loudest). Click to expand.
     private var pill: some View {
         Button {
             hud.collapsed = false
         } label: {
-            HStack(spacing: 9) {
-                GlowDot(color: Theme.recRed, size: 9, pulsing: true)
-                Text("REC \(controller.elapsedText)")
-                    .font(Theme.mono(12, .medium))
-                    .tracking(0.7)
-                    .foregroundStyle(Theme.textHi)
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.textFaint)
+            HStack(spacing: 8) {
+                MarkGlyph(size: 16, live: true)
+                FlowWave(level: max(state.meetingMeLevel, state.meetingThemLevel),
+                         live: true, width: 96, height: 18)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background {
-                ZStack {
-                    Capsule().fill(.ultraThinMaterial)
-                    Capsule().fill(cardTint.opacity(0.95))
-                }
-            }
-            .overlay(Capsule().strokeBorder(Theme.lift(0.13), lineWidth: 1))
-            .contentShape(Capsule())
+            .padding(6)
+            .contentShape(Rectangle())
+            .shadow(color: .black.opacity(0.28), radius: 4, y: 1)
         }
         .buttonStyle(.plain)
         .help("Expand recording HUD")

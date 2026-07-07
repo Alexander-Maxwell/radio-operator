@@ -20,7 +20,45 @@ enum PreviewExporter {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         menubarStrip(to: dir)
         pillStates(to: dir)
+        hudStates(to: dir)
         return true
+    }
+
+    /// A warm desktop-like gradient the frosted surfaces can sample.
+    private static var desktop: some View {
+        LinearGradient(colors: [Color(red: 0.82, green: 0.79, blue: 0.74),
+                                Color(red: 0.68, green: 0.70, blue: 0.72),
+                                Color(red: 0.55, green: 0.58, blue: 0.62)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    // MARK: Meeting HUD snapshots
+
+    private static func hudStates(to dir: String) {
+        let state = AppState.shared
+        state.meetingActive = true
+        state.meetingMeLevel = 0.62
+        state.meetingThemLevel = 0.34
+        let hud = RecordingHUDController.shared
+        for (name, collapsed) in [("hud-collapsed", true), ("hud-expanded", false)] {
+            hud.collapsed = collapsed
+            let content = ZStack {
+                desktop
+                RecordingHUDView().environmentObject(state).environmentObject(hud)
+                    .padding(18)
+            }
+            .frame(width: 460, height: 360)
+
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = 2
+            guard let img = renderer.nsImage, let tiff = img.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff) else {
+                FileHandle.standardError.write("[preview] hud render failed: \(name)\n".data(using: .utf8)!)
+                continue
+            }
+            write(rep, "\(name).png", dir)
+        }
+        state.meetingActive = false
     }
 
     private static func write(_ rep: NSBitmapImageRep, _ name: String, _ dir: String) {
