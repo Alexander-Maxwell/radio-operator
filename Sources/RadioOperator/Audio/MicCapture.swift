@@ -23,7 +23,12 @@ final class MicCapture: @unchecked Sendable {
     private(set) var lastBufferAt: Date?
     private var configObserver: NSObjectProtocol?
     private var _preferredDeviceUID: String?
-    private var _voiceProcessing = true
+    // OFF by default. VPIO is opt-in per capture session (dictation forces it
+    // off; a meeting sets it from micEchoCancellation). A default of `true`
+    // meant any path that started the engine before a controller set the flag
+    // (auto-start / the mic monitor) latched VPIO onto the shared device and
+    // silenced the next dictation.
+    private var _voiceProcessing = false
 
     private init() {}
 
@@ -125,10 +130,21 @@ final class MicCapture: @unchecked Sendable {
         // device is unreliable.
         engine = AVAudioEngine()
         let input = engine.inputNode
-        // Enable AEC before touching the format/device — it reconfigures the
-        // input unit.
-        if voiceProcessing {
-            try input.setVoiceProcessingEnabled(true)
+        // Voice-Processing I/O (hardware AEC) is a STICKY, device-level change:
+        // a fresh engine that merely omits the enable can inherit a VPIO state
+        // left latched by a prior meeting (or a crashed/killed capture) and gate
+        // a multi-channel mic to pure silence. Set it EXPLICITLY both ways so
+        // `false` actively CLEARS any latch. Before touching the format/device —
+        // it reconfigures the input unit.
+        do {
+            try input.setVoiceProcessingEnabled(voiceProcessing)
+        } catch {
+            // Enabling can fail on some device chains (aggregates, certain USB
+            // interfaces); let startEngineLocked's fallback retry without it.
+            // Disabling must never block plain capture — if it throws, the unit
+            // isn't in VPIO mode anyway, so proceed.
+            if voiceProcessing { throw error }
+            NSLog("MicCapture: setVoiceProcessingEnabled(false) threw (\(error.localizedDescription)) — proceeding without VPIO")
         }
         applyPreferredDeviceLocked(to: input)
         let inFormat = input.inputFormat(forBus: 0)

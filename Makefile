@@ -37,10 +37,40 @@ run: app
 	open "build/Radio Operator.app"
 
 install: app
+	@echo "→ installing to /Applications with a live-mic gate (set SKIP_MIC_GATE=1 for a headless/no-mic box)…"
+	@if [ -d "/Applications/Radio Operator.app" ]; then \
+	  rm -rf "/Applications/Radio Operator.app.prev"; \
+	  cp -R "/Applications/Radio Operator.app" "/Applications/Radio Operator.app.prev"; \
+	  echo "  backed up current build → /Applications/Radio Operator.app.prev"; \
+	fi
 	rm -rf "/Applications/Radio Operator.app"
 	cp -R "build/Radio Operator.app" "/Applications/Radio Operator.app"
-	@echo "Installed /Applications/Radio Operator.app"
-	@echo "→ run 'make smoke' to verify the live dictation mic path (must print PROBE-RESULT PASS)."
+	@if [ "$${SKIP_MIC_GATE:-0}" = "1" ]; then \
+	  rm -rf "/Applications/Radio Operator.app.prev"; \
+	  echo "  SKIP_MIC_GATE=1 → live-mic gate skipped. Installed /Applications/Radio Operator.app"; \
+	  exit 0; \
+	fi
+	@echo "  running live-mic gate on the installed signed binary (up to 3 probes; a silent build rolls back)…"
+	@pass=0; \
+	for i in 1 2 3; do \
+	  if "/Applications/Radio Operator.app/Contents/MacOS/RadioOperator" --probe-capture 3 2>&1 | grep -q "PROBE-RESULT PASS"; then \
+	    pass=1; echo "  probe $$i: PASS"; break; \
+	  else echo "  probe $$i: FAIL (buffers silent)"; fi; \
+	done; \
+	if [ "$$pass" = "1" ]; then \
+	  rm -rf "/Applications/Radio Operator.app.prev"; \
+	  echo "✅ live-mic gate PASSED — Installed /Applications/Radio Operator.app"; \
+	else \
+	  echo "❌ live-mic gate FAILED — the new build's mic came up SILENT (VPIO/AEC signature)."; \
+	  if [ -d "/Applications/Radio Operator.app.prev" ]; then \
+	    rm -rf "/Applications/Radio Operator.app"; \
+	    mv "/Applications/Radio Operator.app.prev" "/Applications/Radio Operator.app"; \
+	    echo "   ↩︎ rolled back to the previous build. Fix the mic path, then reinstall."; \
+	  else \
+	    echo "   (no previous build to roll back to — left in place; fix and reinstall.)"; \
+	  fi; \
+	  exit 1; \
+	fi
 
 # Live-mic smoke gate: asserts the dictation path actually receives non-silent
 # audio (peak > 0). The check that would have caught the 0.3.0 meeting-AEC

@@ -221,8 +221,13 @@ struct SettingsData: Codable, Sendable {
     var autoStartOnMic: Bool = true
     /// Hardware echo cancellation (Apple Voice-Processing I/O) on the mic, so
     /// the far side coming through the speakers is removed before transcription
-    /// and never mislabeled as "Me". Headphones make it moot; leave it on.
-    var micEchoCancellation: Bool = true
+    /// and never mislabeled as "Me". OFF by default: VPIO is a duplex unit that
+    /// also DUCKS/seizes system OUTPUT (you stop hearing the meeting) and gates
+    /// multi-channel mics to silence. The software echo guard already filters
+    /// speaker bleed from the transcript without touching the audio you hear.
+    /// Opt in only if you record on speakers and accept the output ducking;
+    /// headphones make it moot.
+    var micEchoCancellation: Bool = false
     /// BCP-47 identifier for the transcription language. No picker UI yet
     /// (D3: English-only for now) — parameterized so the engine isn't
     /// hardcoded and a future picker is pure UI. The default lives in ONE
