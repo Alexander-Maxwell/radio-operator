@@ -1,30 +1,52 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Palette / sections
-
-private enum RO {
-    /// Weathered brass: the one identity accent, used sparingly (selection, preview).
-    static let accent = Palette.accent
-}
-
 // MARK: - Reusable building blocks
 
-private struct PaneHeader: View {
+/// 1px internal card divider.
+private func cardDivider() -> some View {
+    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+}
+
+/// Pane title block: display title + mono badge, optional trailing accessory
+/// (e.g. an add button), and a dim subtitle underneath.
+private struct PaneHeader<Accessory: View>: View {
     let title: String
     let badge: String
     let sub: String
+    let accessory: Accessory
+
+    init(title: String, badge: String, sub: String,
+         @ViewBuilder accessory: () -> Accessory) {
+        self.title = title; self.badge = badge; self.sub = sub
+        self.accessory = accessory()
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.system(size: 21, weight: .semibold))
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(title)
+                    .font(Theme.display(20, .semibold))
+                    .foregroundStyle(Theme.textMax)
                 Spacer()
-                Text(badge).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(1).foregroundStyle(.tertiary)
+                Text(badge)
+                    .font(Theme.mono(10, .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.textMono)
+                accessory
             }
-            Text(sub).font(.system(size: 12.5)).foregroundStyle(.secondary)
+            Text(sub)
+                .font(Theme.display(12.5))
+                .foregroundStyle(Theme.textDim)
+                .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+extension PaneHeader where Accessory == EmptyView {
+    init(title: String, badge: String, sub: String) {
+        self.init(title: title, badge: badge, sub: sub) { EmptyView() }
     }
 }
 
@@ -40,20 +62,18 @@ private struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(1.2).foregroundStyle(.secondary)
+                Eyebrow(text: title.uppercased(), size: 10, tracking: 1.6,
+                        color: Theme.textMono)
                 Spacer()
                 if let hint {
-                    Text(hint).font(.system(size: 11)).foregroundStyle(.tertiary)
+                    Text(hint).font(Theme.display(11)).foregroundStyle(Theme.textGhost)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 9)
-            Divider()
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            cardDivider()
             content
         }
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+        .roCard()
     }
 }
 
@@ -68,10 +88,15 @@ private struct SettingRow<Control: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Theme.display(13))
+                    .foregroundStyle(Theme.textHi)
                 if let desc {
-                    Text(desc).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    Text(desc)
+                        .font(Theme.display(11.5))
+                        .foregroundStyle(Theme.textFaint)
+                        .lineSpacing(1.5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -79,6 +104,17 @@ private struct SettingRow<Control: View>: View {
             control
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+}
+
+/// TextEditor well: faint fill + hairline, shared by preview and templates.
+private struct EditorWell: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .scrollContentBackground(.hidden)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Theme.hairline(0.08), lineWidth: 1))
     }
 }
 
@@ -108,20 +144,22 @@ struct DictationPane: View {
                 VStack(alignment: .leading, spacing: 8) {
                     miniLabel("YOU SAID (RAW)")
                     TextEditor(text: $previewRaw)
-                        .font(.system(size: 12.5)).frame(height: 62)
-                        .scrollContentBackground(.hidden)
+                        .font(Theme.display(12.5))
+                        .frame(height: 62)
                         .padding(7)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+                        .modifier(EditorWell())
                     miniLabel("PASTED (CLEANED)")
                     Text(cleaned.isEmpty ? "—" : cleaned)
-                        .font(.system(size: 12.5)).textSelection(.enabled)
+                        .font(Theme.display(12.5))
+                        .foregroundStyle(Theme.textHi)
+                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
                         .padding(9)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(RO.accent.opacity(0.09)))
+                        .background(RoundedRectangle(cornerRadius: 8)
+                            .fill(Theme.green.opacity(0.08)))
                 }
                 .padding(14)
-                Divider()
+                cardDivider()
                 SettingRow(title: "Cleanup level",
                            desc: "Fillers and voice commands are always safe; Standard also applies your dictionary and snippets.") {
                     Picker("", selection: $settings.data.cleanupLevel) {
@@ -141,7 +179,7 @@ struct DictationPane: View {
                         .labelsHidden().frame(width: 150)
                         .onChange(of: settings.data.holdHotkey) { DictationController.shared.hotkeys.restart() }
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Smart leading space",
                                desc: "Adds a space before pasted text when the target app needs one.") {
                         Toggle("", isOn: $settings.data.smartLeadingSpace).labelsHidden()
@@ -167,10 +205,10 @@ struct DictationPane: View {
                             ForEach(inputDevices) { Text($0.name).tag($0.uid) }
                         }
                         .labelsHidden().frame(width: 200)
-                        Button { inputDevices = AudioInputDevices.list() } label: {
-                            Image(systemName: "arrow.clockwise")
+                        HoverIconButton(systemName: "arrow.clockwise",
+                                        help: "Rescan input devices") {
+                            inputDevices = AudioInputDevices.list()
                         }
-                        .buttonStyle(.borderless).help("Rescan input devices")
                     }
                 }
             }
@@ -195,22 +233,38 @@ struct DictationPane: View {
     }
 
     private func miniLabel(_ s: String) -> some View {
-        Text(s).font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-            .tracking(1).foregroundStyle(.tertiary)
+        Text(s).font(Theme.mono(9.5, .medium))
+            .tracking(1).foregroundStyle(Theme.textMono)
     }
 }
 
-// MARK: - Dictionary & Snippets panes (promoted to the Console sidebar)
+// MARK: - Dictionary & Snippets panes (capture-tuning config)
 
 /// Shared trash button for editable rows.
 private func editRemove(_ action: @escaping () -> Void) -> some View {
-    Button(action: action) { Image(systemName: "trash") }.buttonStyle(.borderless).help("Remove")
+    HoverIconButton(systemName: "trash", help: "Remove", action: action)
 }
 
 /// Shared "add row" button.
 private func editAdd(_ title: String, _ action: @escaping () -> Void) -> some View {
     Button(action: action) { Label(title, systemImage: "plus") }
-        .buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 8)
+        .buttonStyle(DimButtonStyle())
+        .padding(.horizontal, 14).padding(.vertical, 10)
+}
+
+/// Bordered table shell: 12px radius, hairline, clipped row fills.
+private struct TableShell: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Theme.hairline(0.08), lineWidth: 1))
+    }
+}
+
+/// 1px divider between table rows (fainter than card dividers).
+private func rowDivider() -> some View {
+    Rectangle().fill(Color.white.opacity(0.04)).frame(height: 1)
 }
 
 struct DictionaryPane: View {
@@ -219,28 +273,72 @@ struct DictionaryPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PaneHeader(title: "Dictionary", badge: "SPOKEN → WRITTEN",
-                       sub: "Fix names, jargon, and brands the transcriber gets wrong. At Standard cleanup, each spoken form is rewritten to its written form (longest match first).")
-            Card(title: "Dictionary", hint: "fix names, jargon, brands") {
-                VStack(spacing: 0) {
-                    ForEach($settings.data.dictionary) { $entry in
-                        HStack(spacing: 8) {
-                            TextField("Spoken", text: $entry.spoken)
-                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                            TextField("Written", text: $entry.written)
-                            editRemove { settings.data.dictionary.removeAll { $0.id == entry.id } }
-                        }
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                    }
-                    if settings.data.dictionary.isEmpty {
-                        emptyHint("No words yet. Add one to correct a term the transcriber misses.")
-                    }
-                    editAdd("Add word") {
-                        settings.data.dictionary.append(DictionaryEntry(spoken: "", written: ""))
+                       sub: "Fix names, jargon, and brands the transcriber gets wrong. At Standard cleanup, each spoken form is rewritten to its written form (longest match first).") {
+                Button {
+                    settings.data.dictionary.append(DictionaryEntry(spoken: "", written: ""))
+                } label: {
+                    Label("Add term", systemImage: "plus")
+                }
+                .buttonStyle(DimButtonStyle())
+            }
+
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Eyebrow(text: "WRITTEN TERM", size: 10, tracking: 1.2, color: Theme.textMono)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Eyebrow(text: "SPOKEN FORM", size: 10, tracking: 1.2, color: Theme.textMono)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Color.clear.frame(width: 44, height: 1)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Color.white.opacity(0.02))
+                cardDivider()
+
+                ForEach($settings.data.dictionary) { $entry in
+                    DictionaryRow(entry: $entry,
+                                  isLast: entry.id == settings.data.dictionary.last?.id) {
+                        settings.data.dictionary.removeAll { $0.id == entry.id }
                     }
                 }
+                if settings.data.dictionary.isEmpty {
+                    emptyHint("No words yet. Add one to correct a term the transcriber misses.")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            .modifier(TableShell())
         }
+    }
+}
+
+private struct DictionaryRow: View {
+    @Binding var entry: DictionaryEntry
+    let isLast: Bool
+    let remove: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                TextField("Written", text: $entry.written)
+                    .textFieldStyle(.plain)
+                    .font(Theme.display(14, .medium))
+                    .foregroundStyle(Theme.textHi)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                TextField("Spoken", text: $entry.spoken)
+                    .textFieldStyle(.plain)
+                    .font(Theme.mono(12.5))
+                    .foregroundStyle(Theme.textFaint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                editRemove(remove)
+                    .opacity(hovering ? 1 : 0)
+                    .frame(width: 44, alignment: .trailing)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            if !isLast { rowDivider() }
+        }
+        .background(hovering ? Color.white.opacity(0.02) : .clear)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -250,34 +348,72 @@ struct SnippetsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PaneHeader(title: "Snippets", badge: "SAY A TRIGGER",
-                       sub: "Say a trigger phrase alone and it expands to the full text — signatures, addresses, canned replies. Whole-utterance match only, so normal dictation is untouched.")
-            Card(title: "Snippets", hint: "trigger → expansion") {
-                VStack(spacing: 0) {
-                    ForEach($settings.data.snippets) { $snippet in
-                        HStack(alignment: .top, spacing: 8) {
-                            TextField("Trigger", text: $snippet.trigger).frame(maxWidth: 150)
-                            Image(systemName: "arrow.right").foregroundStyle(.secondary).padding(.top, 4)
-                            TextField("Expansion", text: $snippet.expansion, axis: .vertical).lineLimit(1...4)
-                            editRemove { settings.data.snippets.removeAll { $0.id == snippet.id } }
-                        }
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                    }
-                    if settings.data.snippets.isEmpty {
-                        emptyHint("No snippets yet. Add one to expand a spoken trigger into saved text.")
-                    }
-                    editAdd("Add snippet") {
-                        settings.data.snippets.append(Snippet(trigger: "", expansion: ""))
+                       sub: "Say a trigger phrase alone and it expands to the full text — signatures, addresses, canned replies. Whole-utterance match only, so normal dictation is untouched.") {
+                Button {
+                    settings.data.snippets.append(Snippet(trigger: "", expansion: ""))
+                } label: {
+                    Label("Add snippet", systemImage: "plus")
+                }
+                .buttonStyle(DimButtonStyle())
+            }
+
+            VStack(spacing: 0) {
+                ForEach($settings.data.snippets) { $snippet in
+                    SnippetRow(snippet: $snippet,
+                               isLast: snippet.id == settings.data.snippets.last?.id) {
+                        settings.data.snippets.removeAll { $0.id == snippet.id }
                     }
                 }
+                if settings.data.snippets.isEmpty {
+                    emptyHint("No snippets yet. Add one to expand a spoken trigger into saved text.")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            .modifier(TableShell())
         }
     }
 }
 
+private struct SnippetRow: View {
+    @Binding var snippet: Snippet
+    let isLast: Bool
+    let remove: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 14) {
+                TextField("Trigger", text: $snippet.trigger)
+                    .textFieldStyle(.plain)
+                    .font(Theme.mono(12.5))
+                    .foregroundStyle(Theme.green)
+                    .frame(width: 140, alignment: .leading)
+                    .padding(.top, 7)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textMono)
+                    .padding(.top, 9)
+                TextField("Expansion", text: $snippet.expansion, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...4)
+                    .font(Theme.display(13))
+                    .foregroundStyle(Theme.textBody)
+                    .padding(.top, 7)
+                editRemove(remove)
+                    .opacity(hovering ? 1 : 0)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            if !isLast { rowDivider() }
+        }
+        .background(hovering ? Color.white.opacity(0.02) : .clear)
+        .onHover { hovering = $0 }
+    }
+}
+
 private func emptyHint(_ s: String) -> some View {
-    Text(s).font(.system(size: 11.5)).foregroundStyle(.tertiary)
-        .padding(.horizontal, 15).padding(.vertical, 10)
+    Text(s).font(Theme.display(11.5)).foregroundStyle(Theme.textMeta)
+        .padding(.horizontal, 15).padding(.vertical, 12)
 }
 
 // MARK: - Meetings pane
@@ -293,13 +429,16 @@ struct MeetingsPane: View {
             Card(title: "Notes folder", hint: "plain markdown · Obsidian-ready") {
                 HStack(spacing: 10) {
                     Text(settings.data.notesFolderPath)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
+                        .foregroundStyle(Theme.textBody)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer()
                     Button("Change…", action: chooseFolder)
+                        .buttonStyle(DimButtonStyle())
                     Button("Reveal") {
                         NSWorkspace.shared.open(URL(fileURLWithPath: settings.data.notesFolderPath))
                     }
+                    .buttonStyle(DimButtonStyle())
                 }
                 .padding(14)
             }
@@ -310,12 +449,12 @@ struct MeetingsPane: View {
                                desc: "Begins capture the moment another app uses your mic — Zoom, Meet, Teams, Slack, FaceTime. Your own dictation never triggers it.") {
                         Toggle("", isOn: $settings.data.autoStartOnMic).labelsHidden()
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Auto-summarize on stop",
                                desc: "Claude drafts Summary, Decisions, Action Items, and Follow-ups when you end the meeting.") {
                         Toggle("", isOn: $settings.data.autoSummarize).labelsHidden()
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Summary template",
                                desc: "Which template the summary follows. Edit template contents in Intelligence.") {
                         Picker("", selection: meetingTemplateBinding) {
@@ -325,7 +464,7 @@ struct MeetingsPane: View {
                         }
                         .labelsHidden().frame(width: 200)
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Echo guard",
                                desc: "Filters the far side out of the “Me” channel. Auto turns on for any speakers (built-in or external); headphones give the cleanest transcript.") {
                         Picker("", selection: $settings.data.echoGuardMode) {
@@ -333,7 +472,7 @@ struct MeetingsPane: View {
                         }
                         .pickerStyle(.segmented).labelsHidden().frame(width: 180)
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Cancel speaker echo",
                                desc: "Hardware echo cancellation removes the far side coming through your speakers before it’s transcribed, so it isn’t mislabeled as you. Takes effect next meeting.") {
                         Toggle("", isOn: Binding(
@@ -341,7 +480,7 @@ struct MeetingsPane: View {
                             set: { settings.data.micEchoCancellation = $0
                                    MicCapture.shared.voiceProcessing = $0 })).labelsHidden()
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Keep meeting audio",
                                desc: "Off by default. When on, the .m4a stays local next to the note.") {
                         Toggle("", isOn: $settings.data.retainAudio).labelsHidden()
@@ -389,13 +528,13 @@ struct IntelligencePane: View {
                         .labelsHidden().frame(width: 240)
                         .onChange(of: settings.data.claudeMode) { health.refresh() }
                     }
-                    Divider()
+                    cardDivider()
                     if settings.data.claudeMode == .cli {
                         SettingRow(title: "Model", desc: "sonnet, haiku, or opus.") {
                             TextField("", text: $settings.data.claudeCLIModel)
                                 .textFieldStyle(.roundedBorder).frame(width: 150)
                         }
-                        Divider()
+                        cardDivider()
                         cliStatus
                     } else {
                         SettingRow(title: "API key", desc: "Stored in your Keychain, never in settings.") {
@@ -406,7 +545,7 @@ struct IntelligencePane: View {
                                     health.refresh()
                                 }
                         }
-                        Divider()
+                        cardDivider()
                         SettingRow(title: "Model") {
                             TextField("", text: $settings.data.apiModel)
                                 .textFieldStyle(.roundedBorder).frame(width: 200)
@@ -427,35 +566,31 @@ struct IntelligencePane: View {
                         TextField("Name", text: templateNameBinding)
                             .textFieldStyle(.roundedBorder).frame(width: 150)
                         Spacer()
-                        Button {
+                        HoverIconButton(systemName: "plus", help: "Add a template") {
                             let tpl = NamedTemplate(name: "New template",
                                                     body: SettingsData.defaultSummaryTemplate)
                             settings.data.summaryTemplates.append(tpl)
                             settings.data.selectedTemplateID = tpl.id
-                        } label: { Image(systemName: "plus") }
-                        .buttonStyle(.borderless).help("Add a template")
-                        Button {
+                        }
+                        HoverIconButton(systemName: "trash", help: "Delete this template") {
                             guard let sel = settings.data.selectedTemplate else { return }
                             settings.data.summaryTemplates.removeAll { $0.id == sel.id }
                             settings.data.selectedTemplateID = settings.data.summaryTemplates.first?.id
-                        } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless)
+                        }
                         .disabled(settings.data.summaryTemplates.count <= 1)
-                        .help("Delete this template")
                     }
                     TextEditor(text: templateBodyBinding)
-                        .font(.system(size: 12, design: .monospaced)).frame(height: 150)
-                        .scrollContentBackground(.hidden)
+                        .font(Theme.mono(12)).frame(height: 150)
                         .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+                        .modifier(EditorWell())
                     HStack {
                         Text("Summaries use the selected template. Notes you jot during a meeting are treated as emphasis and marked ✍️.")
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(Theme.display(11.5)).foregroundStyle(Theme.textFaint)
                         Spacer()
                         Button("Reset to default") {
                             settings.data.setSelectedTemplateBody(SettingsData.defaultSummaryTemplate)
                         }
+                        .buttonStyle(DimButtonStyle())
                     }
                 }
                 .padding(14)
@@ -467,7 +602,7 @@ struct IntelligencePane: View {
                         HStack(spacing: 8) {
                             TextField("Bundle ID (e.g. com.apple.mail) or *", text: $rule.bundleID)
                                 .frame(maxWidth: 240)
-                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                            Image(systemName: "arrow.right").foregroundStyle(Theme.textMono)
                             TextField("Style (e.g. formal, no emoji, short sentences)", text: $rule.style)
                             editRemove { settings.data.appRules.removeAll { $0.id == rule.id } }
                         }
@@ -480,7 +615,7 @@ struct IntelligencePane: View {
                     editAdd("Add rule") {
                         settings.data.appRules.append(AppRule(bundleID: "", style: ""))
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Apply to meeting summaries",
                                desc: "Off by default. When on, a * rule's style also shapes meeting summaries. Dictation is never styled — it stays deterministic.") {
                         Toggle("", isOn: $settings.data.applyStyleToSummaries).labelsHidden()
@@ -515,18 +650,20 @@ struct IntelligencePane: View {
         HStack(spacing: 8) {
             if let path = ClaudeService.shared.cliPath() {
                 if ClaudeService.shared.cliAuthOK() {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text("CLI found · \(path)").font(.system(size: 11.5, design: .monospaced))
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
+                    Text("CLI found · \(path)").font(Theme.mono(11.5))
+                        .foregroundStyle(Theme.textFaint)
                         .lineLimit(1).truncationMode(.middle)
                 } else {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
                     Text("CLI found but signed out — run  claude auth login  in Terminal, then Retry.")
-                        .font(.system(size: 11.5)).textSelection(.enabled)
+                        .font(Theme.display(11.5)).foregroundStyle(Theme.textBody)
+                        .textSelection(.enabled)
                 }
             } else {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
                 Text("claude CLI not found — install Claude Code or switch to API mode.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.display(11.5)).foregroundStyle(Theme.textBody)
             }
             Spacer()
         }
@@ -555,22 +692,24 @@ struct PrivacyPane: View {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         StatCell(value: "\(footprint.dictations)", label: "Dictations")
-                        Divider().frame(height: 44)
+                        statDivider
                         StatCell(value: "\(footprint.meetings)", label: "Meetings")
-                        Divider().frame(height: 44)
+                        statDivider
                         StatCell(value: DataFootprint.humanSize(footprint.notesBytes), label: "Notes")
-                        Divider().frame(height: 44)
+                        statDivider
                         StatCell(value: DataFootprint.humanSize(footprint.audioBytes), label: "Audio")
                     }
-                    Divider()
+                    cardDivider()
                     HStack(spacing: 10) {
                         Text(settings.data.notesFolderPath)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(Theme.mono(12))
+                            .foregroundStyle(Theme.textBody)
                             .lineLimit(1).truncationMode(.middle)
                         Spacer()
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.open(URL(fileURLWithPath: settings.data.notesFolderPath))
                         }
+                        .buttonStyle(DimButtonStyle())
                     }
                     .padding(14)
                 }
@@ -585,10 +724,10 @@ struct PrivacyPane: View {
                         }
                         .labelsHidden().frame(width: 210)
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Clear dictation history now",
                                desc: "Deletes the history database and dictation markdown. Meetings are untouched.") {
-                        Button("Clear…", role: .destructive) { confirmClear = true }
+                        destructiveButton("Clear…") { confirmClear = true }
                     }
                 }
             }
@@ -597,17 +736,17 @@ struct PrivacyPane: View {
                 VStack(spacing: 0) {
                     SettingRow(title: "Panic Wipe…",
                                desc: "Clears the history database and destroys its encryption key in your Keychain — every encrypted transcript anywhere becomes permanently unreadable. A fresh key is created at next launch.") {
-                        Button("Panic Wipe…", role: .destructive) { confirmPanic = true }
+                        destructiveButton("Panic Wipe…") { confirmPanic = true }
                     }
-                    Divider()
+                    cardDivider()
                     SettingRow(title: "Also delete notes and audio files",
                                desc: "Off by default. When on, the wipe also empties Meetings, Dictations, and Audio — your markdown notes and any retained recordings.") {
                         Toggle("", isOn: $panicIncludeNotes).labelsHidden()
                     }
                     if let panicStatus {
-                        Divider()
+                        cardDivider()
                         Text(panicStatus)
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(Theme.display(11.5)).foregroundStyle(Theme.textFaint)
                             .padding(.horizontal, 14).padding(.vertical, 8)
                     }
                 }
@@ -632,11 +771,12 @@ struct PrivacyPane: View {
                     SettingRow(title: "Export Diagnostics…",
                                desc: "Writes the last 24 hours of this app's own log messages (status lines only — dictation content is never logged) to a file you choose. Nothing is transmitted; share it yourself if you want to.") {
                         Button("Export…") { exportDiagnostics() }
+                            .buttonStyle(DimButtonStyle())
                     }
                     if let diagnosticsStatus {
-                        Divider()
+                        cardDivider()
                         Text(diagnosticsStatus)
-                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .font(Theme.display(11.5)).foregroundStyle(Theme.textFaint)
                             .padding(.horizontal, 14).padding(.vertical, 8)
                     }
                 }
@@ -646,13 +786,13 @@ struct PrivacyPane: View {
                 VStack(spacing: 0) {
                     permRow("Microphone", "Hear you dictate and your side of meetings.",
                             health.mic, pane: Permissions.microphonePane)
-                    Divider()
+                    cardDivider()
                     permRow("Accessibility", "Pastes text at your cursor. While off, text is copied but not pasted.",
                             health.accessibility, pane: Permissions.accessibilityPane)
-                    Divider()
+                    cardDivider()
                     permRow("Input Monitoring", "Sees your hold-to-talk key.",
                             health.inputMonitoring, pane: Permissions.inputMonitoringPane)
-                    Divider()
+                    cardDivider()
                     permBoolRow("System Audio Recording", "Captures the other side of meetings.",
                                 health.systemAudio, pane: Permissions.audioCapturePane)
                 }
@@ -667,13 +807,24 @@ struct PrivacyPane: View {
         }
     }
 
+    private var statDivider: some View {
+        Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1, height: 44)
+    }
+
+    private func destructiveButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).foregroundStyle(Theme.alertRed)
+        }
+        .buttonStyle(DimButtonStyle())
+    }
+
     private func permRow(_ name: String, _ desc: String, _ status: Permissions.Status, pane: String) -> some View {
         HStack(spacing: 12) {
-            Circle().fill(status == .granted ? .green : (status == .denied ? .red : .orange))
-                .frame(width: 9, height: 9)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.system(size: 13))
-                Text(desc).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            GlowDot(color: status == .granted ? Theme.green
+                    : (status == .denied ? Theme.alertRed : Theme.amber), size: 7)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name).font(Theme.display(13)).foregroundStyle(Theme.textHi)
+                Text(desc).font(Theme.display(11.5)).foregroundStyle(Theme.textFaint)
             }
             Spacer()
             permStateView(granted: status == .granted, pane: pane)
@@ -683,10 +834,10 @@ struct PrivacyPane: View {
 
     private func permBoolRow(_ name: String, _ desc: String, _ ok: Bool, pane: String) -> some View {
         HStack(spacing: 12) {
-            Circle().fill(ok ? .green : .orange).frame(width: 9, height: 9)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.system(size: 13))
-                Text(desc).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            GlowDot(color: ok ? Theme.green : Theme.amber, size: 7)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name).font(Theme.display(13)).foregroundStyle(Theme.textHi)
+                Text(desc).font(Theme.display(11.5)).foregroundStyle(Theme.textFaint)
             }
             Spacer()
             permStateView(granted: ok, pane: pane)
@@ -697,11 +848,11 @@ struct PrivacyPane: View {
     @ViewBuilder
     private func permStateView(granted: Bool, pane: String) -> some View {
         if granted {
-            Text("GRANTED").font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.green)
+            Text("GRANTED").font(Theme.mono(10, .medium)).tracking(0.8)
+                .foregroundStyle(Theme.green)
         } else {
             Button("Fix") { Permissions.openSettings(pane: pane) }
-                .buttonStyle(.borderedProminent).controlSize(.small).tint(.orange)
+                .buttonStyle(.borderedProminent).controlSize(.small).tint(Theme.amber)
         }
     }
 
@@ -781,11 +932,12 @@ private struct StatCell: View {
     let label: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(value).font(.system(size: 20, weight: .semibold, design: .monospaced))
+            Text(value).font(Theme.mono(20, .semibold))
                 .monospacedDigit()
+                .foregroundStyle(Theme.textMax)
             Text(label.uppercased())
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                .tracking(1).foregroundStyle(.secondary)
+                .font(Theme.mono(9.5, .medium))
+                .tracking(1).foregroundStyle(Theme.textMeta)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)

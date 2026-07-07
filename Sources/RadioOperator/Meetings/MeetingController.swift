@@ -151,11 +151,17 @@ final class MeetingController: ObservableObject {
         MicCapture.shared.voiceProcessing = SettingsStore.shared.data.micEchoCancellation
         do {
             let micRecorder = self.micRecorder
+            let meGate = LevelGate()
             micToken = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in
                 mic.feed(buffer)
                 micRecorder?.write(buffer)
             }, onLevel: { level in
-                Task { @MainActor in AppState.shared.micLevel = level }
+                // Fires per audio buffer; gate before touching the MainActor.
+                guard meGate.shouldPublish(level) else { return }
+                Task { @MainActor in
+                    AppState.shared.micLevel = level
+                    AppState.shared.meetingMeLevel = level
+                }
             })
         } catch {
             failStart("Microphone unavailable: \(error.localizedDescription)")
@@ -163,9 +169,16 @@ final class MeetingController: ObservableObject {
         }
 
         let systemRecorder = self.systemRecorder
+        let themGate = LevelGate()
         tap.onBuffer = { buffer in
             system.feed(buffer)
             systemRecorder?.write(buffer)
+            // Tap buffers arrive converted to the analyzer format (often
+            // int16), which rmsLevel can't read — amplitude(of:) can. Same
+            // ×12 UI gain as the mic meter.
+            let level = min(1, MicCapture.amplitude(of: buffer).rms * 12)
+            guard themGate.shouldPublish(level) else { return }
+            Task { @MainActor in AppState.shared.meetingThemLevel = level }
         }
         do {
             try tap.start(outputFormat: format)
@@ -176,6 +189,9 @@ final class MeetingController: ObservableObject {
             banner = "System audio unavailable (\(error.localizedDescription)) — capturing your mic only."
             UserDefaults.standard.set(false, forKey: "systemAudioPermissionSeen")
         }
+
+        // Capture is live (mic at minimum) — surface the HUD.
+        RecordingHUDController.shared.show()
 
         do { try await mic.start(locale: locale) } catch {
             channelFailed(.me, message: error.localizedDescription)
@@ -192,6 +208,17 @@ final class MeetingController: ObservableObject {
         stopInternals()
         active = false
         AppState.shared.meetingActive = false
+        AppState.shared.meetingMeLevel = 0
+        AppState.shared.meetingThemLevel = 0
+        RecordingHUDController.shared.dismiss()
+    }
+
+    /// Drops a "🚩 <elapsed> flagged" line into the user notes — persisted
+    /// with the note and an emphasis signal for the summary.
+    func flagMoment() {
+        guard active else { return }
+        let line = "🚩 \(elapsedText) flagged"
+        userNotes = userNotes.isEmpty ? line : userNotes + "\n" + line
     }
 
     // MARK: - Live ingestion
@@ -265,6 +292,7 @@ final class MeetingController: ObservableObject {
     func stop() {
         guard active, !stopping else { return }
         stopping = true
+        RecordingHUDController.shared.dismiss()
         elapsedTimer?.invalidate()
         watchdogTimer?.invalidate()
         persistTask?.cancel()
@@ -289,6 +317,8 @@ final class MeetingController: ObservableObject {
                 AppState.shared.meetingUtterances = utterances
                 AppState.shared.meetingVolatileMe = ""
                 AppState.shared.meetingVolatileThem = ""
+                AppState.shared.meetingMeLevel = 0
+                AppState.shared.meetingThemLevel = 0
                 self.persistTranscript(final: true)
                 self.summaryPhase = .transcriptSaved
                 self.active = false
@@ -397,5 +427,24 @@ final class MeetingController: ObservableObject {
             center.add(UNNotificationRequest(
                 identifier: UUID().uuidString, content: content, trigger: nil))
         }
+    }
+}
+
+/// Audio-thread → MainActor meter gate: lets a level through at most ~12 Hz
+/// and only when it moved enough to visibly change the bars, so per-buffer
+/// callbacks never storm the MainActor.
+private final class LevelGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastValue: Float = -1
+    private var lastAt: CFAbsoluteTime = 0
+
+    func shouldPublish(_ value: Float) -> Bool {
+        let now = CFAbsoluteTimeGetCurrent()
+        lock.lock()
+        defer { lock.unlock() }
+        guard now - lastAt >= 0.08, abs(value - lastValue) > 0.02 else { return false }
+        lastValue = value
+        lastAt = now
+        return true
     }
 }

@@ -44,6 +44,9 @@ final class AppState: ObservableObject {
     /// True when system-audio capture failed and the meeting is mic-only.
     @Published var meetingDegradedNoTap: Bool = false
     @Published var meetingRetainingAudio: Bool = false
+    /// Meeting meter levels (0–1), throttled at the source to ≤ ~12 Hz.
+    @Published var meetingMeLevel: Float = 0
+    @Published var meetingThemLevel: Float = 0
 
     // Intelligence
     @Published var summaryInFlight: Bool = false

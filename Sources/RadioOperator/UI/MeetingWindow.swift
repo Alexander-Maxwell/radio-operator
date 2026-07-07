@@ -14,77 +14,75 @@ struct MeetingWindowView: View {
             if let banner = controller.banner {
                 bannerView(banner)
             }
-            Divider()
+            hairline
             transcript
             if state.meetingActive || !controller.userNotes.isEmpty {
-                Divider()
+                hairline
                 notesPane
             }
-            Divider()
+            hairline
             footer
         }
         .frame(minWidth: 480, minHeight: 420)
+        .background(Theme.surface1)
+        .environment(\.colorScheme, .dark)
     }
 
-    /// Jot-and-enhance: rough notes typed here are persisted with the note
-    /// and steer the Claude summary (emphasis, not transcript).
-    private var notesPane: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("My Notes — jotted points steer the summary")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            TextEditor(text: $controller.userNotes)
-                .font(.body)
-                .frame(minHeight: 56, maxHeight: 110)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(Color.primary.opacity(0.04),
-                            in: RoundedRectangle(cornerRadius: 6))
-                .disabled(!state.meetingActive)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+    private var hairline: some View {
+        Rectangle().fill(Theme.hairline(0.07)).frame(height: 1)
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 9) {
             if state.meetingActive {
-                Circle().fill(.red).frame(width: 9, height: 9)
-                Text("Recording — \(controller.elapsedText)")
-                    .font(.headline)
+                GlowDot(color: Theme.recRed, size: 9, pulsing: true)
+                Text("Recording")
+                    .font(Theme.display(14, .semibold))
+                    .foregroundStyle(Theme.textMax)
+                Text(controller.elapsedText)
+                    .font(Theme.mono(12.5))
+                    .foregroundStyle(Theme.textFaint)
                 if state.meetingDegradedNoTap {
-                    Text("mic only")
-                        .font(.caption)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.orange.opacity(0.2), in: Capsule())
+                    StateChip(text: "MIC ONLY", color: Theme.amber)
                 }
                 if state.meetingRetainingAudio {
                     Image(systemName: "recordingtape")
+                        .font(.system(size: 12))
                         .help("Audio retained locally")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textFaint)
                 }
             } else {
-                Text("Meeting").font(.headline)
+                Text("Meeting")
+                    .font(Theme.display(14, .semibold))
+                    .foregroundStyle(Theme.textMax)
             }
             Spacer()
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
     }
 
     private func bannerView(_ text: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text(text).font(.callout)
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.amber)
+            Text(text)
+                .font(Theme.display(12.5))
+                .foregroundStyle(Theme.textBody)
             Spacer()
             Button {
                 controller.banner = nil
             } label: {
-                Image(systemName: "xmark").font(.caption)
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.textFaint)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.orange.opacity(0.12))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Theme.amber.opacity(0.1))
     }
 
     private var transcript: some View {
@@ -97,7 +95,8 @@ struct MeetingWindowView: View {
                         Text(state.meetingActive
                              ? "Listening… speech appears here as it's transcribed."
                              : "No transcript.")
-                            .foregroundStyle(.secondary)
+                            .font(Theme.display(13))
+                            .foregroundStyle(Theme.textDim)
                             .padding(.top, 24)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
@@ -112,8 +111,9 @@ struct MeetingWindowView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(12)
+                .padding(14)
             }
+            .background(Theme.bgRail)
             .onChange(of: state.meetingUtterances.count) {
                 withAnimation { proxy.scrollTo("bottom") }
             }
@@ -126,80 +126,141 @@ struct MeetingWindowView: View {
         }
     }
 
+    /// Speaker turn: 2px speaker-colored left border, faint tint, square
+    /// left / rounded right corners.
     private func utteranceRow(_ u: Utterance) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text(u.speaker == .me ? "Me" : "Them")
-                    .font(.caption.bold())
-                    .foregroundStyle(u.speaker == .me ? Palette.accent : Color.secondary)
+        let color = u.speaker == .me ? Theme.green : Theme.speakerRemote
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 7) {
+                Text(u.speaker.rawValue)
+                    .font(Theme.display(12, .semibold))
+                    .foregroundStyle(color)
                 Text(u.start, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(Theme.mono(10.5))
+                    .foregroundStyle(Theme.textMono)
             }
             Text(u.text)
+                .font(Theme.display(13.5))
+                .foregroundStyle(Theme.textMuted)
+                .lineSpacing(3)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
-        .background(
-            (u.speaker == .me ? Palette.accent.opacity(0.08) : Color.primary.opacity(0.04)),
-            in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.06),
+                    in: UnevenRoundedRectangle(cornerRadii: .init(
+                        topLeading: 0, bottomLeading: 0,
+                        bottomTrailing: 8, topTrailing: 8)))
+        .overlay(alignment: .leading) {
+            Rectangle().fill(color).frame(width: 2)
+        }
     }
 
     private func ghostRow(speaker: Speaker, text: String) -> some View {
-        HStack(spacing: 6) {
-            Text(speaker == .me ? "Me" : "Them").font(.caption.bold())
-            Text(text).italic()
+        let color = speaker == .me ? Theme.green : Theme.speakerRemote
+        return HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text(speaker.rawValue)
+                .font(Theme.display(12, .semibold))
+                .foregroundStyle(color.opacity(0.7))
+            Text(text)
+                .font(Theme.display(13))
+                .italic()
+                .foregroundStyle(Theme.textDim2)
         }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
+    }
+
+    /// Jot-and-enhance: rough notes typed here are persisted with the note
+    /// and steer the Claude summary (emphasis, not transcript).
+    private var notesPane: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Eyebrow(text: "MY NOTES", size: 10, tracking: 1.6)
+                Text("jotted points steer the summary")
+                    .font(Theme.display(11))
+                    .foregroundStyle(Theme.textMeta)
+            }
+            TextEditor(text: $controller.userNotes)
+                .font(Theme.display(13))
+                .foregroundStyle(Theme.textBody)
+                .frame(minHeight: 56, maxHeight: 110)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(Color.white.opacity(0.03),
+                            in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(Theme.hairline(0.07), lineWidth: 1))
+                .disabled(!state.meetingActive)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder
     private var footer: some View {
-        HStack {
+        HStack(spacing: 8) {
             switch controller.summaryPhase {
             case .none:
                 if state.meetingActive {
                     Spacer()
-                    Button(role: .destructive) {
+                    Button {
                         MeetingController.shared.stop()
                     } label: {
-                        Label("Stop Meeting", systemImage: "stop.circle.fill")
+                        HStack(spacing: 7) {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Stop Meeting")
+                        }
                     }
+                    .buttonStyle(RecButtonStyle())
                     .keyboardShortcut(.escape, modifiers: [])
                 } else {
                     Text("Start a meeting from the menu bar icon.")
-                        .foregroundStyle(.secondary)
+                        .font(Theme.display(12.5))
+                        .foregroundStyle(Theme.textDim)
                     Spacer()
                 }
             case .transcriptSaved:
-                Label("Transcript saved", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                statusLabel("checkmark.circle.fill", Theme.green, "Transcript saved")
                 Spacer()
             case .summarizing(let startedAt):
                 ProgressView().controlSize(.small)
                 SummarizingLabel(startedAt: startedAt)
                 Spacer()
             case .ready(let noteURL):
-                Label("Summary ready", systemImage: "sparkles")
-                    .foregroundStyle(.green)
+                statusLabel("sparkles", Theme.green, "Summary ready")
                 Spacer()
                 Button("Open Note") {
                     NSWorkspace.shared.open(noteURL)
                 }
+                .buttonStyle(GreenButtonStyle())
             case .failed(let message, let noteURL):
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                statusLabel("exclamationmark.triangle.fill", Theme.amber, message)
                     .lineLimit(1)
                 Spacer()
                 Button("Open Transcript") { NSWorkspace.shared.open(noteURL) }
+                    .buttonStyle(DimButtonStyle())
                 Button("Retry Summary") {
                     MeetingController.shared.retrySummary(noteURL: noteURL)
                 }
+                .buttonStyle(DimButtonStyle())
             }
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+    }
+
+    private func statusLabel(_ symbol: String, _ color: Color, _ text: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(color)
+            Text(text)
+                .font(Theme.display(12.5))
+                .foregroundStyle(Theme.textBody)
+        }
     }
 }
 
@@ -210,7 +271,8 @@ private struct SummarizingLabel: View {
 
     var body: some View {
         Text("Summarizing with Claude… \(Int(now.timeIntervalSince(startedAt)))s")
-            .foregroundStyle(.secondary)
+            .font(Theme.display(12.5))
+            .foregroundStyle(Theme.textFaint)
             .onReceive(timer) { now = $0 }
     }
 }

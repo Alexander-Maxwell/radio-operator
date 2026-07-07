@@ -328,8 +328,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if MeetingController.shared.isActive {
             MeetingController.shared.stop()
         } else {
+            // The floating recording HUD (shown by MeetingController once
+            // capture actually starts) is the primary in-meeting surface; the
+            // full transcript window stays one click away from it.
             MeetingController.shared.start()
-            openMeetingWindow()
             requestNotificationAuthIfNeeded()
         }
     }
@@ -380,7 +382,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openMeetingWindow() {
         WindowRouter.shared.show(id: "meeting", title: "Meeting",
-                                 size: NSSize(width: 560, height: 520)) {
+                                 size: NSSize(width: 560, height: 520),
+                                 darkChrome: true) {
             MeetingWindowView().environmentObject(AppState.shared)
         }
     }
