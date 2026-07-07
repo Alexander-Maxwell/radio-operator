@@ -1,14 +1,12 @@
 import AppKit
 
-/// Applies the user's appearance preference to the whole app. `system` clears
-/// the override so windows follow macOS; light/dark force one look.
+/// Commits the whole app to the light Violet "Enclosed" identity. The redesign
+/// is light-only (no dark variant is specified), so every mode resolves to
+/// light — system menus and controls stay consistent with the light windows.
+/// `mode` is ignored but kept in the signature for the persisted setting.
 @MainActor
 enum Appearance {
     static func apply(_ mode: AppearanceMode) {
-        switch mode {
-        case .system: NSApp.appearance = nil
-        case .light:  NSApp.appearance = NSAppearance(named: .aqua)
-        case .dark:   NSApp.appearance = NSAppearance(named: .darkAqua)
-        }
+        NSApp.appearance = NSAppearance(named: .aqua)
     }
 }

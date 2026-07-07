@@ -1016,17 +1016,10 @@ struct GeneralPane: View {
                 }
             }
 
-            Card(title: "Appearance") {
-                SettingRow(title: "Theme", desc: "Auto follows macOS.") {
-                    Picker("", selection: $settings.data.appearance) {
-                        ForEach(AppearanceMode.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 200)
-                    .onChange(of: settings.data.appearance) {
-                        Appearance.apply(settings.data.appearance)
-                    }
-                }
-            }
+            // Appearance is fixed to the light Violet "Enclosed" identity —
+            // the theme picker was removed with the redesign (no dark variant
+            // is specified). The AppearanceMode model is kept for settings
+            // round-trip compatibility.
         }
     }
 }
