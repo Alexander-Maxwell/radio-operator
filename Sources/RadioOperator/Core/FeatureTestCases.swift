@@ -364,14 +364,46 @@ enum MiscFeatureTestCases {
 
         t.test("mic auto-start decision") { t in
             typealias M = MicActivityMonitor
-            t.expect(M.shouldAutoStart(settingEnabled: true, weAreCapturing: false, meetingActive: false),
-                     "idle + another app grabs mic → start")
-            t.expect(!M.shouldAutoStart(settingEnabled: false, weAreCapturing: false, meetingActive: false),
+            t.expect(M.shouldAutoStart(settingEnabled: true, weAreCapturing: false,
+                                       meetingActive: false, conferencingAppRunning: true),
+                     "idle + a call app is running + mic hot → start")
+            t.expect(!M.shouldAutoStart(settingEnabled: false, weAreCapturing: false,
+                                        meetingActive: false, conferencingAppRunning: true),
                      "feature off → never start")
-            t.expect(!M.shouldAutoStart(settingEnabled: true, weAreCapturing: true, meetingActive: false),
+            t.expect(!M.shouldAutoStart(settingEnabled: true, weAreCapturing: true,
+                                        meetingActive: false, conferencingAppRunning: true),
                      "our own dictation/meeting is the cause → no self-trigger")
-            t.expect(!M.shouldAutoStart(settingEnabled: true, weAreCapturing: false, meetingActive: true),
+            t.expect(!M.shouldAutoStart(settingEnabled: true, weAreCapturing: false,
+                                        meetingActive: true, conferencingAppRunning: true),
                      "a meeting is already live → no double-start")
+            t.expect(!M.shouldAutoStart(settingEnabled: true, weAreCapturing: false,
+                                        meetingActive: false, conferencingAppRunning: false),
+                     "mic hot but no call app (a website, Photo Booth, our own probe) → never start")
+        }
+
+        t.test("conferencing app detection") { t in
+            t.expect(ConferencingApps.isCallAppRunning(["com.apple.Safari", "us.zoom.xos"]),
+                     "Zoom running → call app present")
+            t.expect(ConferencingApps.isCallAppRunning(["com.tinyspeck.slackmacgap"]),
+                     "Slack running → call app present")
+            t.expect(!ConferencingApps.isCallAppRunning(["com.apple.Safari", "com.apple.Photos"]),
+                     "no call app among running apps → false")
+            t.expect(!ConferencingApps.isCallAppRunning([]),
+                     "nothing running → false")
+            t.expect(!ConferencingApps.isCallAppRunning(["com.warroom.radiooperator"]),
+                     "our own process is never a call app (the probe self-trigger)")
+        }
+
+        t.test("phantom auto-start discard") { t in
+            typealias A = MeetingAutoCancel
+            t.expect(A.shouldDiscard(autoStarted: true, elapsed: 15, sawSpeech: false),
+                     "auto-started, silent past the grace window → discard the phantom")
+            t.expect(!A.shouldDiscard(autoStarted: true, elapsed: 20, sawSpeech: true),
+                     "real speech captured → keep, never discard")
+            t.expect(!A.shouldDiscard(autoStarted: true, elapsed: 8, sawSpeech: false),
+                     "still inside the grace window → wait")
+            t.expect(!A.shouldDiscard(autoStarted: false, elapsed: 60, sawSpeech: false),
+                     "a manual meeting is never auto-discarded, even if empty")
         }
 
         t.test("summary prompt uses default spec when template blank") { t in

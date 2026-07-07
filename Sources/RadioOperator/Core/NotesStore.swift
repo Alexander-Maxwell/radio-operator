@@ -124,6 +124,18 @@ final class NotesStore {
         try? String(contentsOf: noteURL, encoding: .utf8)
     }
 
+    /// Deletes a meeting note and any audio tracks sharing its stem — used to
+    /// clean up a phantom auto-started meeting so no empty note is left behind.
+    func deleteMeetingNote(_ noteURL: URL) {
+        let fm = FileManager.default
+        let stem = noteURL.deletingPathExtension().lastPathComponent
+        try? fm.removeItem(at: noteURL)
+        let audio = audioFolder
+        for suffix in [" - me.m4a", " - them.m4a"] {
+            try? fm.removeItem(at: audio.appendingPathComponent(stem + suffix))
+        }
+    }
+
     /// Rewrites the note's title (frontmatter + H1) and renames the file —
     /// and any retained audio sharing its stem — to match. Returns the new URL.
     func retitleNote(noteURL: URL, title: String) -> URL {

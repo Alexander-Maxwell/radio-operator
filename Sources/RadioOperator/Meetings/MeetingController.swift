@@ -45,6 +45,14 @@ final class MeetingController: ObservableObject {
     private var systemRecorder: AudioRecorder?
     private var stopping = false
     private(set) var active = false
+    /// True when the mic monitor auto-armed this meeting (vs a manual start).
+    /// Only auto-started meetings self-discard when no conversation follows.
+    private var autoStarted = false
+    /// Set once any real (non-marker) speech is transcribed, so a phantom
+    /// auto-start can be told apart from a genuine call that opened quietly.
+    private var sawRealSpeech = false
+    /// One-shot grace-window check that discards a silent auto-start.
+    private var autoCancelTimer: Timer?
 
     private init() {}
 
@@ -52,10 +60,12 @@ final class MeetingController: ObservableObject {
 
     // MARK: - Start
 
-    func start() {
+    func start(autoStarted: Bool = false) {
         guard !active, !stopping else { return }
         active = true
         stopping = false
+        self.autoStarted = autoStarted
+        sawRealSpeech = false
         banner = nil
         summaryPhase = .none
         userNotes = ""
@@ -103,6 +113,14 @@ final class MeetingController: ObservableObject {
         }
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.checkLiveness() }
+        }
+        // A meeting the app armed on its own gets a grace window: if no real
+        // speech lands, it's a phantom (mic opened but no call) and self-discards.
+        if autoStarted {
+            autoCancelTimer = Timer.scheduledTimer(
+                withTimeInterval: MeetingAutoCancel.graceWindow, repeats: false) { [weak self] _ in
+                Task { @MainActor in self?.discardIfPhantom() }
+            }
         }
 
         Task { [weak self] in
@@ -213,6 +231,56 @@ final class MeetingController: ObservableObject {
         RecordingHUDController.shared.dismiss()
     }
 
+    /// Grace-window verdict for an auto-started meeting: if it captured no real
+    /// speech, it's a phantom (a call app was up and the mic opened, but no
+    /// conversation followed — or a bare mic-open slipped the front gate). Tear
+    /// it down and delete its note + any audio so no empty "Meeting in progress"
+    /// junk is left behind. Genuine calls (any speech) are untouched.
+    private func discardIfPhantom() {
+        guard active, !stopping,
+              MeetingAutoCancel.shouldDiscard(
+                autoStarted: autoStarted,
+                elapsed: Date().timeIntervalSince(startedAt ?? Date()),
+                sawSpeech: sawRealSpeech) else { return }
+        stopping = true
+        autoStarted = false
+        RecordingHUDController.shared.dismiss()
+        autoCancelTimer?.invalidate(); autoCancelTimer = nil
+        elapsedTimer?.invalidate()
+        watchdogTimer?.invalidate()
+        persistTask?.cancel()
+        let discardURL = noteURL
+
+        Task { [weak self] in
+            guard let self else { return }
+            if let micToken = self.micToken {
+                MicCapture.shared.unsubscribe(micToken)
+                self.micToken = nil
+            }
+            self.tap.stop()
+            await self.micTranscriber?.finishAndWait(timeout: 2.0)
+            await self.systemTranscriber?.finishAndWait(timeout: 2.0)
+            self.micRecorder?.finish()
+            self.systemRecorder?.finish()
+
+            await MainActor.run {
+                if let discardURL { NotesStore.shared.deleteMeetingNote(discardURL) }
+                AppState.shared.meetingUtterances = []
+                AppState.shared.meetingVolatileMe = ""
+                AppState.shared.meetingVolatileThem = ""
+                AppState.shared.meetingMeLevel = 0
+                AppState.shared.meetingThemLevel = 0
+                self.summaryPhase = .none
+                self.active = false
+                self.stopping = false
+                self.noteURL = nil
+                AppState.shared.meetingActive = false
+                self.stopInternals()
+                NSLog("RadioOperator meeting auto-discarded — phantom auto-start (no speech in \(Int(MeetingAutoCancel.graceWindow))s)")
+            }
+        }
+    }
+
     /// Drops a "🚩 <elapsed> flagged" line into the user notes — persisted
     /// with the note and an emphasis signal for the summary.
     func flagMoment() {
@@ -225,6 +293,10 @@ final class MeetingController: ObservableObject {
 
     private func ingest(_ event: TranscriptEvent) {
         guard active else { return }
+        // Real speech (not a bracketed "[… transcription lost]" honesty marker)
+        // means this is a genuine call, so the phantom check won't discard it.
+        let text = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty, !text.hasPrefix("[") { sawRealSpeech = true }
         assembler.ingest(event)
         AppState.shared.meetingUtterances = assembler.utterances
         AppState.shared.meetingVolatileMe = assembler.volatileMe
@@ -295,6 +367,7 @@ final class MeetingController: ObservableObject {
         RecordingHUDController.shared.dismiss()
         elapsedTimer?.invalidate()
         watchdogTimer?.invalidate()
+        autoCancelTimer?.invalidate(); autoCancelTimer = nil
         persistTask?.cancel()
 
         let startedAt = self.startedAt ?? Date()
@@ -412,6 +485,8 @@ final class MeetingController: ObservableObject {
         elapsedTimer = nil
         watchdogTimer?.invalidate()
         watchdogTimer = nil
+        autoCancelTimer?.invalidate()
+        autoCancelTimer = nil
     }
 
     // MARK: - Helpers

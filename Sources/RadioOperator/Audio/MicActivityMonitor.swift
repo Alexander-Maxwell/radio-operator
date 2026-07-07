@@ -103,9 +103,13 @@ final class MicActivityMonitor: @unchecked Sendable {
 
     /// Pure decision (unit-tested): an idle→running mic edge should auto-start a
     /// meeting only when the feature is on, we aren't already capturing (so our
-    /// own dictation/meeting never self-triggers), and no meeting is live.
+    /// own dictation/meeting never self-triggers), no meeting is live, AND a
+    /// known conferencing app is actually running. The last clause is what stops
+    /// a bare mic-open — a website's permission check, Photo Booth, or our own
+    /// out-of-process `--probe-capture` smoke test — from arming a phantom
+    /// recording (`weAreCapturing` only sees this process's own capture).
     static func shouldAutoStart(settingEnabled: Bool, weAreCapturing: Bool,
-                                meetingActive: Bool) -> Bool {
-        settingEnabled && !weAreCapturing && !meetingActive
+                                meetingActive: Bool, conferencingAppRunning: Bool) -> Bool {
+        settingEnabled && !weAreCapturing && !meetingActive && conferencingAppRunning
     }
 }

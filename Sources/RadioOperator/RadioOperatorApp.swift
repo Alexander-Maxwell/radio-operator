@@ -345,23 +345,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Mic-activity auto-start. Fires on the idle→running edge; we skip when our
-    /// own capture is the cause (dictation/meeting) so it never self-triggers,
-    /// then re-confirm a beat later to ignore transient mic probes.
+    /// Mic-activity auto-start. Fires on the idle→running edge only when a known
+    /// conferencing app is actually running (so a bare mic-open — a website, our
+    /// own out-of-process probe — never arms a phantom recording), we aren't the
+    /// cause, and no meeting is live; then re-confirms a beat later to ignore
+    /// transient mic blips. The started meeting is marked auto-started so it
+    /// self-discards if no conversation follows, and it announces itself so it
+    /// is never a silent surprise.
     @MainActor private func autoStartMeetingIfIdle() {
         guard MicActivityMonitor.shouldAutoStart(
             settingEnabled: SettingsStore.shared.data.autoStartOnMic,
             weAreCapturing: MicCapture.shared.isCapturing,
-            meetingActive: MeetingController.shared.isActive) else { return }
+            meetingActive: MeetingController.shared.isActive,
+            conferencingAppRunning: ConferencingApps.aCallAppIsRunning()) else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             guard let self,
                   MicActivityMonitor.shouldAutoStart(
                     settingEnabled: SettingsStore.shared.data.autoStartOnMic,
                     weAreCapturing: MicCapture.shared.isCapturing,
-                    meetingActive: MeetingController.shared.isActive),
+                    meetingActive: MeetingController.shared.isActive,
+                    conferencingAppRunning: ConferencingApps.aCallAppIsRunning()),
                   MicActivityMonitor.isRunning(MicActivityMonitor.currentDefaultInput())
             else { return }
-            self.toggleMeeting()
+            MeetingController.shared.start(autoStarted: true)
+            self.requestNotificationAuthIfNeeded()
+            MeetingController.notify(
+                title: "Recording started",
+                body: "A call was detected. Open Radio Operator to stop, or it stops itself if there's no audio.")
         }
     }
 
