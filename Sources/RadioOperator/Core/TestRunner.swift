@@ -50,6 +50,7 @@ enum TestRunner {
         ("MicConvert", MicConvertTestCases.run),
         ("AudioLevel", AudioLevelTestCases.run),
         ("CaptureSilence", CaptureSilenceTestCases.run),
+        ("TaskLine", TaskLineTestCases.run),
         ("ClaudeService", ClaudeServiceTestCases.run),
         ("StressProbe", StressProbeTestCases.run),
         ("Preflight", PreflightTestCases.run),
