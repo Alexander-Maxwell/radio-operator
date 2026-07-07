@@ -383,9 +383,13 @@ enum MiscFeatureTestCases {
 
         t.test("conferencing app detection") { t in
             t.expect(ConferencingApps.isCallAppRunning(["com.apple.Safari", "us.zoom.xos"]),
-                     "Zoom running → call app present")
-            t.expect(ConferencingApps.isCallAppRunning(["com.tinyspeck.slackmacgap"]),
-                     "Slack running → call app present")
+                     "Zoom (per-call) running → auto-start eligible")
+            t.expect(ConferencingApps.isCallAppRunning(["com.apple.FaceTime"]),
+                     "FaceTime (per-call) running → auto-start eligible")
+            t.expect(!ConferencingApps.isCallAppRunning(["com.tinyspeck.slackmacgap"]),
+                     "Slack is always-on — its presence must NOT arm auto-start")
+            t.expect(!ConferencingApps.isCallAppRunning(["com.microsoft.teams2", "com.hnc.Discord"]),
+                     "Teams/Discord are always-on too — never arm on their presence")
             t.expect(!ConferencingApps.isCallAppRunning(["com.apple.Safari", "com.apple.Photos"]),
                      "no call app among running apps → false")
             t.expect(!ConferencingApps.isCallAppRunning([]),
