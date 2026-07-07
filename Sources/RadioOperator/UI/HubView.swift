@@ -197,9 +197,10 @@ private struct HubSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            brandHeader
             if selection.isConsole {
                 group("CONSOLE", [.dictations, .meetings, .tasks, .ask])
-                    .padding(.top, 14)
+                    .padding(.top, 6)
                 Spacer(minLength: 12)
                 settingsEntry
             } else {
@@ -274,24 +275,35 @@ private struct HubSidebar: View {
         }
     }
 
+    private var brandHeader: some View {
+        HStack(spacing: 9) {
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 22, height: 22)
+            Text("Radio Operator")
+                .font(Theme.display(15, .semibold))
+                .foregroundStyle(Theme.textMax)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 4)
+    }
+
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Rectangle().fill(Theme.hairline(0.06)).frame(height: 1)
-            HStack(alignment: .top, spacing: 8) {
-                GlowDot(color: Theme.green, size: 7)
-                    .padding(.top, 3)
-                Text("Local-first · nothing\nleaves this Mac")
-                    .font(Theme.display(12))
-                    .foregroundStyle(Theme.textDim2)
-                    .lineSpacing(2)
+            HStack(spacing: 6) {
+                GlowDot(color: Theme.green, size: 5)
+                Text("Local-first · nothing leaves this Mac")
+                    .font(Theme.display(10))
+                    .foregroundStyle(Theme.textFaint)
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 20)
             Text("RADIO OPERATOR \(Theme.version)")
-                .font(Theme.mono(10))
+                .font(Theme.mono(9))
                 .tracking(0.5)
                 .foregroundStyle(Theme.textGhost)
-                .padding(.horizontal, 37)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
         }
     }
 }
