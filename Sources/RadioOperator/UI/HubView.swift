@@ -9,7 +9,7 @@ import AppKit
 /// they're config, not destinations.
 enum HubSection: CaseIterable {
     // Console
-    case dictations, meetings, ask
+    case dictations, meetings, tasks, ask
     // Settings
     case dictationSettings, meetingSettings, intelligence, dictionary, snippets,
          privacy, general
@@ -18,6 +18,7 @@ enum HubSection: CaseIterable {
         switch self {
         case .dictations: return "Dictations"
         case .meetings: return "Meetings"
+        case .tasks: return "Tasks"
         case .ask: return "Ask"
         case .dictationSettings: return "Dictation"
         case .meetingSettings: return "Meetings"
@@ -33,6 +34,7 @@ enum HubSection: CaseIterable {
         switch self {
         case .dictations: return "waveform"
         case .meetings: return "person.2"
+        case .tasks: return "checklist"
         case .ask: return "magnifyingglass"
         case .dictationSettings: return "mic"
         case .meetingSettings: return "person.wave.2"
@@ -46,7 +48,7 @@ enum HubSection: CaseIterable {
 
     var isConsole: Bool {
         switch self {
-        case .dictations, .meetings, .ask: return true
+        case .dictations, .meetings, .tasks, .ask: return true
         default: return false
         }
     }
@@ -160,6 +162,7 @@ struct HubView: View {
         switch hub.section {
         case .dictations: DictationsView().environmentObject(settings)
         case .meetings:   MeetingsView().environmentObject(settings)
+        case .tasks:      TasksView()
         case .ask:        AskView()
         default:
             ScrollView {
@@ -192,7 +195,7 @@ private struct HubSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            group("CONSOLE", [.dictations, .meetings, .ask])
+            group("CONSOLE", [.dictations, .meetings, .tasks, .ask])
                 .padding(.top, 14)
             group("SETTINGS", [.dictationSettings, .meetingSettings, .intelligence,
                                .dictionary, .snippets, .privacy, .general])
