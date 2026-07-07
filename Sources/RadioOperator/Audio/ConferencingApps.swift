@@ -40,6 +40,12 @@ enum ConferencingApps {
         NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
     }
 
+    /// The per-call apps running right now (for decision logging).
+    @MainActor
+    static func runningCallApps() -> [String] {
+        runningBundleIDs().filter { autoStartBundleIDs.contains($0) }
+    }
+
     /// Convenience: is a call app running right now?
     @MainActor
     static func aCallAppIsRunning() -> Bool {

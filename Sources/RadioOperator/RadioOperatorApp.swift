@@ -353,11 +353,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// self-discards if no conversation follows, and it announces itself so it
     /// is never a silent surprise.
     @MainActor private func autoStartMeetingIfIdle() {
+        // A bare mic-open with no per-call app is the common false trigger (a
+        // website's mic check, our own probe). Log it and bail, so a later "why
+        // did it record?" has a trail (metadata only — no content).
+        guard ConferencingApps.aCallAppIsRunning() else {
+            if SettingsStore.shared.data.autoStartOnMic,
+               !MicCapture.shared.isCapturing, !MeetingController.shared.isActive {
+                NSLog("RadioOperator auto-start: mic opened but no per-call app running — not recording")
+            }
+            return
+        }
         guard MicActivityMonitor.shouldAutoStart(
             settingEnabled: SettingsStore.shared.data.autoStartOnMic,
             weAreCapturing: MicCapture.shared.isCapturing,
             meetingActive: MeetingController.shared.isActive,
-            conferencingAppRunning: ConferencingApps.aCallAppIsRunning()) else { return }
+            conferencingAppRunning: true) else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             guard let self,
                   MicActivityMonitor.shouldAutoStart(
@@ -367,6 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     conferencingAppRunning: ConferencingApps.aCallAppIsRunning()),
                   MicActivityMonitor.isRunning(MicActivityMonitor.currentDefaultInput())
             else { return }
+            NSLog("RadioOperator auto-start: per-call app detected \(ConferencingApps.runningCallApps()) — arming meeting")
             MeetingController.shared.start(autoStarted: true)
             self.requestNotificationAuthIfNeeded()
             MeetingController.notify(

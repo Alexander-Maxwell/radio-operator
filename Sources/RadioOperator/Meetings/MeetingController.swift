@@ -106,7 +106,7 @@ final class MeetingController: ObservableObject {
         // fact whether a garbled transcript was speaker bleed or a routing
         // issue — mic + output device, output transport, and whether AEC ran.
         let input = AudioInputDevices.defaultInput()
-        NSLog("RadioOperator meeting start — mic=[\(input?.name ?? "?")] out=[\(output?.name ?? "?") · \(AudioOutputDevices.transportLabel(output?.transport ?? 0)) · headphones=\(output?.isHeadphones ?? false)] echoGuard=\(assembler.echoGuard) aec=\(SettingsStore.shared.data.micEchoCancellation)")
+        NSLog("RadioOperator meeting start — trigger=\(autoStarted ? "auto" : "manual") mic=[\(input?.name ?? "?")] out=[\(output?.name ?? "?") · \(AudioOutputDevices.transportLabel(output?.transport ?? 0)) · headphones=\(output?.isHeadphones ?? false)] echoGuard=\(assembler.echoGuard) aec=\(SettingsStore.shared.data.micEchoCancellation)")
 
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tickElapsed() }
