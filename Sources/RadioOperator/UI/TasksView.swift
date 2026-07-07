@@ -11,6 +11,9 @@ import SwiftUI
 /// filter/sort controls, reminders (Unit 6), and recurrence (Unit 7) follow.
 struct TasksView: View {
     @State private var tasks: [RadioTask] = []
+    @State private var newText = ""
+    @State private var newDue: TaskDuePreset?
+    @State private var newPriority: TaskPriority?
 
     private var open: [RadioTask] { tasks.filter { !$0.done } }
     private var done: [RadioTask] { tasks.filter { $0.done } }
@@ -21,6 +24,7 @@ struct TasksView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            addBar
             if tasks.isEmpty { emptyState } else { content }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -73,6 +77,76 @@ struct TasksView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 11).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.035)))
+    }
+
+    // MARK: Quick add
+
+    private var addBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus").font(.system(size: 12)).foregroundStyle(Theme.textFaint)
+            TextField("Add a task", text: $newText)
+                .textFieldStyle(.plain)
+                .font(Theme.display(13))
+                .foregroundStyle(Theme.textHi)
+                .onSubmit(addTask)
+            Menu {
+                Button("No date") { newDue = nil }
+                ForEach(TaskDuePreset.allCases, id: \.self) { p in
+                    Button(p.label) { newDue = p }
+                }
+            } label: {
+                addChip(icon: "calendar", text: newDue?.label ?? "Due")
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            Menu {
+                Button("None") { newPriority = nil }
+                Button("High") { newPriority = .high }
+                Button("Medium") { newPriority = .medium }
+                Button("Low") { newPriority = .low }
+            } label: {
+                addChip(icon: "flag", text: newPriority.map(Self.priorityLabel) ?? "Priority")
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            Button(action: addTask) {
+                Text("Add")
+                    .font(Theme.display(12, .medium))
+                    .foregroundStyle(canAdd ? Theme.green : Theme.textMeta)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canAdd)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.04)))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.hairline(0.08)))
+        .padding(.horizontal, 14).padding(.bottom, 8)
+    }
+
+    private var canAdd: Bool { !newText.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private func addChip(icon: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 9))
+            Text(text)
+            Image(systemName: "chevron.down").font(.system(size: 7))
+        }
+        .font(Theme.display(11)).foregroundStyle(Theme.textDim)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+    }
+
+    private func addTask() {
+        let text = newText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        let id = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6)).lowercased()
+        let line = TaskLine.format(text: text, done: false,
+                                   due: newDue?.iso(now: Date()),
+                                   priority: newPriority, id: id)
+        let inbox = SettingsStore.shared.notesFolderURL.appendingPathComponent("Tasks.md")
+        let existing = (try? String(contentsOf: inbox, encoding: .utf8)) ?? ""
+        try? TaskEdit.appendedInbox(to: existing, line: line)
+            .write(to: inbox, atomically: true, encoding: .utf8)
+        newText = ""; newDue = nil; newPriority = nil
+        reload()
     }
 
     // MARK: Content
@@ -251,6 +325,10 @@ struct TasksView: View {
         let pa = a.priority?.weight ?? 0, pb = b.priority?.weight ?? 0
         if pa != pb { return pa > pb }
         return a.text.localizedCaseInsensitiveCompare(b.text) == .orderedAscending
+    }
+
+    private static func priorityLabel(_ p: TaskPriority) -> String {
+        switch p { case .high: "High"; case .medium: "Med"; case .low: "Low" }
     }
 
     private static func bucketColor(_ b: TaskBucket) -> Color {

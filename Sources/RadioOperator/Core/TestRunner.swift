@@ -53,6 +53,7 @@ enum TestRunner {
         ("TaskLine", TaskLineTestCases.run),
         ("TaskIndex", TaskIndexTestCases.run),
         ("TaskBucket", TaskBucketTestCases.run),
+        ("TaskEdit", TaskEditTestCases.run),
         ("ClaudeService", ClaudeServiceTestCases.run),
         ("StressProbe", StressProbeTestCases.run),
         ("Preflight", PreflightTestCases.run),
