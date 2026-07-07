@@ -54,5 +54,24 @@ enum TaskEditTestCases {
             t.expect(out.contains("- [ ] A\n- [ ] B"), "B follows A on its own line")
             t.expect(!out.contains("\n\n\n"), "no triple newline")
         }
+
+        t.test("replacingLine swaps the exact line, leaves others") { t in
+            let out = TaskEdit.replacingLine(in: "a\n- [ ] x\nc", oldLine: "- [ ] x", with: "- [x] x")
+            t.expectEqual(out ?? "", "a\n- [x] x\nc", "line replaced in place")
+            t.expect(TaskEdit.replacingLine(in: "a\nb", oldLine: "missing", with: "z") == nil, "absent → nil")
+        }
+
+        t.test("RadioTask.canonicalLine round-trips a parsed line") { t in
+            let line = "- [ ] Follow up 📅 2026-07-10 ⏫ 🆔 z9"
+            let task = RadioTask(parsed: TaskLine.parse(line)!, source: .manual,
+                                 file: URL(fileURLWithPath: "/tmp/Tasks.md"), calendar: cal)
+            t.expectEqual(task.canonicalLine(calendar: cal), line, "reproduces the input line")
+        }
+
+        t.test("canonicalLine emits no id when the line had none") { t in
+            let task = RadioTask(parsed: TaskLine.parse("- [ ] Bare task")!, source: .manual,
+                                 file: URL(fileURLWithPath: "/tmp/Tasks.md"), calendar: cal)
+            t.expect(!task.canonicalLine(calendar: cal).contains("🆔"), "no bogus id written")
+        }
     }
 }

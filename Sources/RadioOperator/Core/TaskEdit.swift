@@ -46,6 +46,16 @@ enum TaskEdit {
         return calendar.date(byAdding: .day, value: delta, to: day)!
     }
 
+    /// Replace the first line exactly equal to `oldLine` with `newLine`, leaving
+    /// every other line untouched. Nil if the line isn't found — the caller then
+    /// leaves the file alone rather than guessing.
+    static func replacingLine(in content: String, oldLine: String, with newLine: String) -> String? {
+        var lines = content.components(separatedBy: "\n")
+        guard let idx = lines.firstIndex(of: oldLine) else { return nil }
+        lines[idx] = newLine
+        return lines.joined(separator: "\n")
+    }
+
     /// Append a task line to the manual `Tasks.md` content, seeding a heading
     /// when the file is empty. Always leaves exactly one trailing newline.
     static func appendedInbox(to content: String, line: String) -> String {

@@ -14,9 +14,16 @@ struct TasksView: View {
     @State private var newText = ""
     @State private var newDue: TaskDuePreset?
     @State private var newPriority: TaskPriority?
+    @State private var groupByProject = false
 
     private var open: [RadioTask] { tasks.filter { !$0.done } }
     private var done: [RadioTask] { tasks.filter { $0.done } }
+
+    private var projectGroups: [(key: String, items: [RadioTask])] {
+        Dictionary(grouping: open) { $0.project ?? "No project" }
+            .map { (key: $0.key, items: $0.value.sorted(by: Self.openBefore)) }
+            .sorted { $0.key < $1.key }
+    }
 
     private func bucket(_ t: RadioTask) -> TaskBucket { TaskBucket.of(due: t.due, now: Date()) }
     private func count(_ b: TaskBucket) -> Int { open.filter { bucket($0) == b }.count }
@@ -154,12 +161,20 @@ struct TasksView: View {
     private var content: some View {
         ScrollView {
             metricsRow
+            controlsRow
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(TaskBucket.allCases, id: \.self) { b in
-                    let items = open.filter { bucket($0) == b }.sorted(by: Self.openBefore)
-                    if !items.isEmpty {
-                        sectionHeader(b.title, items.count, Self.bucketColor(b))
-                        ForEach(items) { row($0) }
+                if groupByProject {
+                    ForEach(projectGroups, id: \.key) { g in
+                        sectionHeader(g.key == "No project" ? g.key : "#\(g.key)", g.items.count, Theme.speakerRemote)
+                        ForEach(g.items) { row($0) }
+                    }
+                } else {
+                    ForEach(TaskBucket.allCases, id: \.self) { b in
+                        let items = open.filter { bucket($0) == b }.sorted(by: Self.openBefore)
+                        if !items.isEmpty {
+                            sectionHeader(b.title, items.count, Self.bucketColor(b))
+                            ForEach(items) { row($0) }
+                        }
                     }
                 }
                 if !done.isEmpty {
@@ -169,6 +184,20 @@ struct TasksView: View {
             }
             .padding(.horizontal, 14).padding(.bottom, 24)
         }
+    }
+
+    private var controlsRow: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Button("Due date") { groupByProject = false }
+                Button("Project") { groupByProject = true }
+            } label: {
+                addChip(icon: "square.stack.3d.up", text: "Group: \(groupByProject ? "Project" : "Due")")
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            Spacer()
+        }
+        .padding(.horizontal, 14).padding(.bottom, 4)
     }
 
     private var emptyState: some View {
@@ -225,6 +254,7 @@ struct TasksView: View {
                 }
             }
             Spacer(minLength: 0)
+            rowMenu(task)
         }
         .padding(.horizontal, 6).padding(.vertical, 8)
         .overlay(alignment: .bottom) {
@@ -311,6 +341,43 @@ struct TasksView: View {
         guard case .meeting = task.source else { return }
         HubState.shared.pendingMeetingID = task.sourceFile.lastPathComponent
         HubState.shared.section = .meetings
+    }
+
+    private func rowMenu(_ task: RadioTask) -> some View {
+        Menu {
+            Menu("Set due") {
+                ForEach(TaskDuePreset.allCases, id: \.self) { p in
+                    Button(p.label) { applyEdit(task) { $0.due = TaskIndex.parseDueDate(p.iso(now: Date())) } }
+                }
+                if task.due != nil { Button("Clear due") { applyEdit(task) { $0.due = nil } } }
+            }
+            Menu("Priority") {
+                Button("High") { applyEdit(task) { $0.priority = .high } }
+                Button("Medium") { applyEdit(task) { $0.priority = .medium } }
+                Button("Low") { applyEdit(task) { $0.priority = .low } }
+                if task.priority != nil { Button("Clear") { applyEdit(task) { $0.priority = nil } } }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textFaint)
+                .frame(width: 20, height: 20)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    }
+
+    /// Apply an edit to a task by re-rendering its canonical line and replacing
+    /// it in the source note in place. Works for meeting notes and the inbox.
+    private func applyEdit(_ task: RadioTask, _ transform: (inout RadioTask) -> Void) {
+        var edited = task
+        transform(&edited)
+        let newLine = edited.canonicalLine()
+        guard newLine != task.sourceLine,
+              let content = try? String(contentsOf: task.sourceFile, encoding: .utf8),
+              let updated = TaskEdit.replacingLine(in: content, oldLine: task.sourceLine, with: newLine)
+        else { return }
+        try? updated.write(to: task.sourceFile, atomically: true, encoding: .utf8)
+        reload()
     }
 
     // MARK: Sort / color

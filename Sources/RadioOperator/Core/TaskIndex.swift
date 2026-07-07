@@ -11,6 +11,10 @@ struct RadioTask: Identifiable, Equatable, Sendable {
     }
 
     let id: String
+    /// The real `🆔` from the line, or nil if the line had none. Distinct from
+    /// `id` (which is synthesized for Identifiable when absent) so a rewrite
+    /// doesn't emit a bogus id.
+    let rawID: String?
     var text: String
     var done: Bool
     var due: Date?
@@ -28,6 +32,7 @@ extension RadioTask {
     init(parsed p: ParsedTaskLine, source: Source, file: URL, calendar: Calendar) {
         self.init(
             id: p.id ?? "\(file.lastPathComponent)#\(p.text)",
+            rawID: p.id,
             text: p.text,
             done: p.done,
             due: p.due.flatMap { TaskIndex.parseDueDate($0, calendar: calendar) },
@@ -37,6 +42,16 @@ extension RadioTask {
             source: source,
             sourceFile: file,
             sourceLine: p.sourceLine)
+    }
+
+    /// Render this task back to a canonical Obsidian-Tasks line (for in-place
+    /// rewrites after an edit). Preserves the original `🆔` (or none); `#tags`
+    /// ride along inside `text`.
+    func canonicalLine(calendar: Calendar = .current) -> String {
+        TaskLine.format(
+            text: text, done: done,
+            due: due.map { TaskEdit.isoString(from: $0, calendar: calendar) },
+            priority: priority, recurrence: recurrence, id: rawID)
     }
 }
 
