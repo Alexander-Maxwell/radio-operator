@@ -266,4 +266,35 @@ final class MicCapture: @unchecked Sendable {
         let rms = sqrtf(sum / Float(count))
         return min(1, rms * 12)
     }
+
+    /// Peak and RMS amplitude of a buffer, normalized to [0, 1] and read from
+    /// whichever channel format is populated — float32, int16, or int32. Unlike
+    /// `rmsLevel` (a gained UI meter that assumes the native float tap), this is
+    /// an accurate measurement usable on the analyzer buffer too, which is
+    /// int16. That format gap is exactly what silently zeroed the first cut of
+    /// the `--probe-capture` smoke gate; keeping the logic here, tested by
+    /// `AudioLevelTestCases`, means the gate can't misread audio as silence
+    /// again. Returns (0, 0) for an empty or unreadable buffer.
+    static func amplitude(of buffer: AVAudioPCMBuffer) -> (peak: Float, rms: Float) {
+        let n = Int(buffer.frameLength)
+        guard n > 0 else { return (0, 0) }
+        var peak: Float = 0
+        var sumSquares: Double = 0
+        func accumulate(_ value: Float) {
+            let a = abs(value)
+            if a > peak { peak = a }
+            sumSquares += Double(a) * Double(a)
+        }
+        if let ch = buffer.floatChannelData?.pointee {
+            for i in 0..<n { accumulate(ch[i]) }
+        } else if let ch = buffer.int16ChannelData?.pointee {
+            for i in 0..<n { accumulate(Float(ch[i]) / 32768.0) }
+        } else if let ch = buffer.int32ChannelData?.pointee {
+            for i in 0..<n { accumulate(Float(Double(ch[i]) / 2_147_483_648.0)) }
+        } else {
+            return (0, 0)
+        }
+        let rms = Float((sumSquares / Double(n)).squareRoot())
+        return (peak, rms)
+    }
 }

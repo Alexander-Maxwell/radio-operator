@@ -100,6 +100,17 @@ enum ProbeRunner {
             semaphore.wait()
             exit(box.ok ? 0 : 1)
         }
+        if let flagIndex = args.firstIndex(of: "--probe-capture") {
+            let seconds = (args.count > flagIndex + 1 ? Double(args[flagIndex + 1]) : nil) ?? 4.0
+            let semaphore = DispatchSemaphore(value: 0)
+            let box = ResultBox()
+            Task {
+                box.ok = await probeCapture(seconds: seconds)
+                semaphore.signal()
+            }
+            semaphore.wait()
+            exit(box.ok ? 0 : 1)
+        }
         return false
     }
 
@@ -446,6 +457,106 @@ enum ProbeRunner {
         _ = await transcriber.finishAndWait(timeout: 5.0)
         return printLeakVerdict(leakVerdict(baselineBytes: baseline, sampleBytes: samples),
                                 baseline: baseline, samples: samples)
+    }
+
+    /// `--probe-capture [seconds]`: the live-mic smoke test. Subscribes to the
+    /// REAL shared MicCapture engine exactly as dictation does (voice processing
+    /// OFF) and asserts non-silent audio actually arrives — the precise signal
+    /// that went dark in the 0.3.0 meeting-AEC regression, where VPIO silenced
+    /// the dictation mic and all 188 unit tests stayed green because none of
+    /// them touch the live engine. Ambient noise clears the floor, so no speech
+    /// is required; if you do speak, it feeds the production Transcriber and
+    /// prints the transcript, proving the whole dictation path end to end.
+    /// Needs Microphone permission — run it from the INSTALLED (signed) app
+    /// binary, not the debug build. Prints PROBE-RESULT PASS/FAIL; NOT part of
+    /// `--run-tests` (requires a live mic + TCC grant).
+    static func probeCapture(seconds: Double) async -> Bool {
+        let locale = Transcriber.defaultLocale
+        guard let format = await Transcriber.preferredFormat(locale: locale) else {
+            print("PROBE-FAIL: no speech model/format for \(locale.identifier)")
+            return false
+        }
+        // Mirror the dictation path exactly: shared engine, voice processing off.
+        MicCapture.shared.voiceProcessing = false
+
+        let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
+        let lock = NSLock()
+        var buffers = 0
+        var frames = 0
+        var peak: Float = 0
+        var sumSquares: Double = 0
+        var sampleCount = 0
+        var finals: [String] = []
+        transcriber.onEvent = { event in
+            lock.lock(); defer { lock.unlock() }
+            if event.isFinal { finals.append(event.text) }
+        }
+        transcriber.onError = { print("PROBE-CAPTURE transcriber error: \($0)") }
+
+        var token: UUID?
+        do {
+            token = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in
+                // Format-agnostic level via the shared, unit-tested helper (the
+                // analyzer buffer is int16, not float — the trap that zeroed the
+                // first cut of this probe). Merge under the lock in O(1).
+                let n = Int(buffer.frameLength)
+                let (bufPeak, bufRMS) = MicCapture.amplitude(of: buffer)
+                lock.lock()
+                buffers += 1
+                frames += n
+                sampleCount += n
+                if bufPeak > peak { peak = bufPeak }
+                sumSquares += Double(bufRMS) * Double(bufRMS) * Double(n)
+                lock.unlock()
+                transcriber.feed(buffer)
+            })
+        } catch {
+            print("PROBE-FAIL: mic subscribe threw — \(error.localizedDescription)")
+            print("  → grant Microphone permission to Radio Operator and run this from the installed app binary")
+            return false
+        }
+        do {
+            try await transcriber.start(locale: locale)
+        } catch {
+            print("PROBE-CAPTURE note: transcriber start failed (\(error.localizedDescription)) — buffer check still valid")
+        }
+        print("PROBE-CAPTURE listening \(String(format: "%.0f", seconds))s on the live mic "
+            + "— speak a sentence to also exercise transcription…")
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        if let token { MicCapture.shared.unsubscribe(token) }
+        _ = await transcriber.finishAndWait(timeout: 4.0)
+
+        lock.lock()
+        let b = buffers, f = frames, pk = peak
+        let rms = sampleCount > 0 ? (sumSquares / Double(sampleCount)).squareRoot() : 0
+        let text = finals.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        lock.unlock()
+
+        let sr = format.sampleRate > 0 ? format.sampleRate : 1
+        let fmtNames = ["other", "float32", "float64", "int16", "int32"]
+        let fmtName = Int(format.commonFormat.rawValue) < fmtNames.count
+            ? fmtNames[Int(format.commonFormat.rawValue)] : "?"
+        print(String(format: "PROBE-CAPTURE buffers=%d frames=%d (~%.1fs audio) fmt=%@@%dHz peak=%.4f rms=%.4f",
+                     b, f, Double(f) / sr, fmtName, Int(sr), pk, rms))
+        if !text.isEmpty { print("PROBE-CAPTURE transcript: \"\(text)\"") }
+
+        // Regression signature: buffers flow but are SILENT (VPIO killed the
+        // dictation mic feed). Non-silent audio = the live path dictation
+        // depends on is healthy. Speech is a bonus; ambient clears this floor,
+        // true silence / no-permission does not.
+        let healthy = b > 0 && pk > 0.001
+        if healthy {
+            print("PROBE-RESULT PASS — live mic delivering audio to the dictation path"
+                + (text.isEmpty
+                    ? " (ambient only; say a sentence to test transcription too)"
+                    : " and transcription works"))
+        } else if b == 0 {
+            print("PROBE-RESULT FAIL — no buffers arrived (mic engine never fed audio; permission or device?)")
+        } else {
+            print("PROBE-RESULT FAIL — buffers arrived but SILENT (peak "
+                + String(format: "%.5f", pk) + ") — the VPIO/AEC-silences-mic signature")
+        }
+        return healthy
     }
 
     /// Pushes an audio file through the production Transcriber path. Returns
