@@ -8,283 +8,7 @@ private enum RO {
     static let accent = Palette.accent
 }
 
-enum HubSection: CaseIterable {
-    // Console
-    case library, ask, dictionary, snippets
-    // Settings
-    case dictation, meetings, intelligence, privacy, general
-
-    var title: String {
-        switch self {
-        case .library: return "Library"
-        case .ask: return "Ask"
-        case .dictionary: return "Dictionary"
-        case .snippets: return "Snippets"
-        case .dictation: return "Dictation"
-        case .meetings: return "Meetings"
-        case .intelligence: return "Intelligence"
-        case .privacy: return "Privacy & Data"
-        case .general: return "General"
-        }
-    }
-    var icon: String {
-        switch self {
-        case .library: return "clock.arrow.circlepath"
-        case .ask: return "text.magnifyingglass"
-        case .dictionary: return "character.book.closed"
-        case .snippets: return "text.badge.plus"
-        case .dictation: return "waveform"
-        case .meetings: return "person.wave.2"
-        case .intelligence: return "sparkles"
-        case .privacy: return "lock.shield"
-        case .general: return "gearshape"
-        }
-    }
-}
-
-/// Cross-window navigation target for the single hub window. Menu items set
-/// this before showing the window, so an already-open hub navigates reactively.
-@MainActor
-final class HubState: ObservableObject {
-    static let shared = HubState()
-    @Published var section: HubSection = .library
-    private init() {}
-}
-
-// MARK: - Live permission / connection health (the trust ribbon)
-
-@MainActor
-final class PermissionHealth: ObservableObject {
-    @Published var mic: Permissions.Status = .notDetermined
-    @Published var accessibility: Permissions.Status = .denied
-    @Published var inputMonitoring: Permissions.Status = .notDetermined
-    @Published var systemAudio = false
-    @Published var claudeReady = false
-
-    private var timer: Timer?
-
-    func refresh() {
-        mic = Permissions.microphone
-        accessibility = Permissions.accessibility
-        inputMonitoring = Permissions.inputMonitoring
-        systemAudio = Permissions.systemAudioLikelyGranted
-        let s = SettingsStore.shared
-        claudeReady = s.data.claudeMode == .cli
-            ? (ClaudeService.shared.cliPath() != nil && ClaudeService.shared.cliAuthOK())
-            : ((s.apiKey ?? "").isEmpty == false)
-    }
-
-    func start() {
-        refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
-        }
-    }
-
-    func stop() { timer?.invalidate(); timer = nil }
-}
-
-// MARK: - Root
-
-struct HubView: View {
-    @EnvironmentObject var settings: SettingsStore
-    @ObservedObject private var hub = HubState.shared
-    @StateObject private var health = PermissionHealth()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            StatusRibbon(health: health) { hub.section = $0 }
-            Divider()
-            HStack(spacing: 0) {
-                sidebar.frame(width: 208)
-                Divider()
-                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .frame(minWidth: 860, minHeight: 560)
-        .onAppear { health.start() }
-        .onDisappear { health.stop() }
-    }
-
-    // Library and Ask own their scrolling and fill the pane; settings panes
-    // sit in a scroll view with padding.
-    @ViewBuilder private var detail: some View {
-        switch hub.section {
-        case .library: LibraryView().environmentObject(settings)
-        case .ask:     AskView()
-        default:
-            ScrollView {
-                settingsPane
-                    .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    @ViewBuilder private var settingsPane: some View {
-        switch hub.section {
-        case .dictionary:   DictionaryPane()
-        case .snippets:     SnippetsPane()
-        case .dictation:    DictationPane()
-        case .meetings:     MeetingsPane()
-        case .intelligence: IntelligencePane(health: health)
-        case .privacy:      PrivacyPane(health: health)
-        case .general:      GeneralPane()
-        default:            EmptyView()
-        }
-    }
-
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            sidebarLabel("CONSOLE")
-            SidebarButton(section: .library, selection: $hub.section)
-            SidebarButton(section: .ask, selection: $hub.section)
-            SidebarButton(section: .dictionary, selection: $hub.section)
-            SidebarButton(section: .snippets, selection: $hub.section)
-            sidebarLabel("SETTINGS").padding(.top, 10)
-            SidebarButton(section: .dictation, selection: $hub.section)
-            SidebarButton(section: .meetings, selection: $hub.section)
-            SidebarButton(section: .intelligence, selection: $hub.section)
-            SidebarButton(section: .privacy, selection: $hub.section)
-            SidebarButton(section: .general, selection: $hub.section)
-            Spacer()
-            Divider()
-            HStack(spacing: 6) {
-                Circle().fill(.green).frame(width: 7, height: 7)
-                Text("Local-first · nothing leaves this Mac")
-                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
-            }
-            .padding(.top, 8)
-            Text("Radio Operator 0.3.1")
-                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
-        }
-        .padding(12)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .underPageBackgroundColor).opacity(0.5))
-    }
-
-    private func sidebarLabel(_ s: String) -> some View {
-        Text(s).font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-            .tracking(1.5).foregroundStyle(.tertiary)
-            .padding(.horizontal, 9).padding(.bottom, 2)
-    }
-}
-
-// MARK: - Status ribbon
-
-private struct StatusRibbon: View {
-    @ObservedObject var health: PermissionHealth
-    var navigate: (HubSection) -> Void
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                Text("SIGNAL")
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                    .tracking(1.6).foregroundStyle(.tertiary)
-                statusChip("MIC", health.mic) { fixMic() }
-                statusChip("ACCESS", health.accessibility) { fixAccessibility() }
-                statusChip("INPUT MON", health.inputMonitoring) { fixInput() }
-                boolChip("SYS AUDIO", health.systemAudio) {
-                    Permissions.openSettings(pane: Permissions.audioCapturePane)
-                }
-                boolChip("CLAUDE", health.claudeReady, fixLabel: "Sign in") { navigate(.intelligence) }
-            }
-            .padding(.horizontal, 14).padding(.vertical, 9)
-        }
-    }
-
-    @ViewBuilder
-    private func statusChip(_ key: String, _ status: Permissions.Status,
-                            fix: @escaping () -> Void) -> some View {
-        RibbonChip(key: key, color: lampColor(status), ok: status == .granted,
-                   value: "Granted", onFix: fix)
-    }
-
-    @ViewBuilder
-    private func boolChip(_ key: String, _ ok: Bool, fixLabel: String = "Fix",
-                          fix: @escaping () -> Void) -> some View {
-        RibbonChip(key: key, color: ok ? .green : .orange, ok: ok,
-                   value: "Ready", fixLabel: fixLabel, onFix: fix)
-    }
-
-    private func lampColor(_ s: Permissions.Status) -> Color {
-        switch s {
-        case .granted: return .green
-        case .denied: return .red
-        case .notDetermined: return .orange
-        }
-    }
-
-    private func fixMic() {
-        switch Permissions.microphone {
-        case .notDetermined:
-            Task { _ = await Permissions.requestMicrophone(); health.refresh() }
-        default:
-            Permissions.openSettings(pane: Permissions.microphonePane)
-        }
-    }
-    private func fixAccessibility() {
-        Permissions.promptAccessibility()
-        Permissions.openSettings(pane: Permissions.accessibilityPane)
-    }
-    private func fixInput() {
-        Permissions.requestInputMonitoring()
-        Permissions.openSettings(pane: Permissions.inputMonitoringPane)
-    }
-}
-
-private struct RibbonChip: View {
-    let key: String
-    let color: Color
-    let ok: Bool
-    let value: String
-    var fixLabel: String = "Fix"
-    var onFix: (() -> Void)? = nil
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Circle().fill(color).frame(width: 8, height: 8)
-                .shadow(color: color.opacity(0.6), radius: 2.5)
-            Text(key).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary)
-            if ok {
-                Text(value).font(.system(size: 10.5)).foregroundStyle(.tertiary)
-            } else if let onFix {
-                Button(fixLabel, action: onFix)
-                    .buttonStyle(.borderedProminent).controlSize(.mini).tint(.orange)
-            }
-        }
-        .padding(.horizontal, 9).padding(.vertical, 5)
-        .background(Capsule().fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(Capsule().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
-    }
-}
-
 // MARK: - Reusable building blocks
-
-private struct SidebarButton: View {
-    let section: HubSection
-    @Binding var selection: HubSection
-
-    var body: some View {
-        Button { selection = section } label: {
-            HStack(spacing: 10) {
-                Image(systemName: section.icon)
-                    .foregroundStyle(selection == section ? RO.accent : Color.secondary)
-                    .frame(width: 18)
-                Text(section.title).font(.system(size: 13))
-                Spacer()
-            }
-            .padding(.horizontal, 9).padding(.vertical, 7)
-            .contentShape(Rectangle())
-            .background(RoundedRectangle(cornerRadius: 7)
-                .fill(selection == section ? RO.accent.opacity(0.16) : Color.clear))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(selection == section ? Color.primary : Color.secondary)
-    }
-}
 
 private struct PaneHeader: View {
     let title: String
@@ -360,7 +84,7 @@ private struct SettingRow<Control: View>: View {
 
 // MARK: - Dictation pane
 
-private struct DictationPane: View {
+struct DictationPane: View {
     @EnvironmentObject var settings: SettingsStore
     @State private var previewRaw =
         "so um, i think we should, like, launch the sip program on monday. new line follow up with the bevmo vendor and, you know, confirm gopuff pricing"
@@ -489,7 +213,7 @@ private func editAdd(_ title: String, _ action: @escaping () -> Void) -> some Vi
         .buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 8)
 }
 
-private struct DictionaryPane: View {
+struct DictionaryPane: View {
     @EnvironmentObject var settings: SettingsStore
 
     var body: some View {
@@ -520,7 +244,7 @@ private struct DictionaryPane: View {
     }
 }
 
-private struct SnippetsPane: View {
+struct SnippetsPane: View {
     @EnvironmentObject var settings: SettingsStore
 
     var body: some View {
@@ -558,7 +282,7 @@ private func emptyHint(_ s: String) -> some View {
 
 // MARK: - Meetings pane
 
-private struct MeetingsPane: View {
+struct MeetingsPane: View {
     @EnvironmentObject var settings: SettingsStore
 
     var body: some View {
@@ -645,7 +369,7 @@ private struct MeetingsPane: View {
 
 // MARK: - Intelligence pane
 
-private struct IntelligencePane: View {
+struct IntelligencePane: View {
     @EnvironmentObject var settings: SettingsStore
     @ObservedObject var health: PermissionHealth
     @State private var apiKeyDraft = ""
@@ -812,7 +536,7 @@ private struct IntelligencePane: View {
 
 // MARK: - Privacy & Data pane
 
-private struct PrivacyPane: View {
+struct PrivacyPane: View {
     @EnvironmentObject var settings: SettingsStore
     @ObservedObject var health: PermissionHealth
     @State private var footprint = DataFootprint.Snapshot.empty
@@ -1070,7 +794,7 @@ private struct StatCell: View {
 
 // MARK: - General pane
 
-private struct GeneralPane: View {
+struct GeneralPane: View {
     @EnvironmentObject var settings: SettingsStore
 
     var body: some View {

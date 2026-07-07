@@ -22,12 +22,15 @@ enum URLCommandTestCases {
             t.expectEqual(parse("radiooperator://meeting/start/"), .meetingStart, "trailing slash")
         }
         t.test("hub sections") { t in
-            t.expectEqual(parse("radiooperator://hub/library"), .hub(.library), "library")
+            t.expectEqual(parse("radiooperator://hub/dictations"), .hub(.dictations), "dictations")
+            t.expectEqual(parse("radiooperator://hub/meetings"), .hub(.meetings), "meetings")
             t.expectEqual(parse("radiooperator://hub/ask"), .hub(.ask), "ask")
             t.expectEqual(parse("radiooperator://hub/dictionary"), .hub(.dictionary), "dictionary")
             t.expectEqual(parse("radiooperator://hub/snippets"), .hub(.snippets), "snippets")
             // "settings" lands on the same section as the Settings… menu item.
-            t.expectEqual(parse("radiooperator://hub/settings"), .hub(.dictation), "settings")
+            t.expectEqual(parse("radiooperator://hub/settings"), .hub(.dictationSettings), "settings")
+            // Legacy route from before the 0.4.0 IA split keeps working.
+            t.expectEqual(parse("radiooperator://hub/library"), .hub(.dictations), "legacy library")
         }
         t.test("junk input maps to unknown, never crashes") { t in
             t.expectEqual(parse("https://example.com"), .unknown, "wrong scheme")

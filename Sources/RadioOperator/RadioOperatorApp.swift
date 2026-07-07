@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if TestRunner.handleIfRequested() { return }
         if ProbeRunner.handleIfRequested() { return }
         if MCPRunner.handleIfRequested() { return }
+        ThemeFonts.register()
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -262,7 +263,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Accepted forms (scheme/host/path case-insensitive, trailing slash ok):
     ///   radiooperator://dictate
     ///   radiooperator://meeting/start | radiooperator://meeting/stop
-    ///   radiooperator://hub/library|ask|dictionary|snippets|settings
+    ///   radiooperator://hub/dictations|meetings|ask|dictionary|snippets|settings
+    ///   (legacy: hub/library → Dictations)
     nonisolated static func parseURLCommand(_ url: URL) -> URLCommand {
         guard url.scheme?.lowercased() == "radiooperator" else { return .unknown }
         let host = url.host?.lowercased() ?? ""
@@ -280,12 +282,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case ("hub", 1):
             switch segments[0] {
-            case "library":    return .hub(.library)
+            case "dictations": return .hub(.dictations)
+            case "meetings":   return .hub(.meetings)
             case "ask":        return .hub(.ask)
             case "dictionary": return .hub(.dictionary)
             case "snippets":   return .hub(.snippets)
             // Same landing section as the "Settings…" menu item.
-            case "settings":   return .hub(.dictation)
+            case "settings":   return .hub(.dictationSettings)
+            // Pre-0.4.0 route: the Library became the Dictations destination.
+            case "library":    return .hub(.dictations)
             default:           return .unknown
             }
         default:
@@ -352,25 +357,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openLibraryAction() { openLibrary() }
     @objc private func openOnboardingAction() { openOnboarding() }
 
-    private func openLibrary() { openHub(.library) }
+    private func openLibrary() { openHub(.dictations) }
 
     @objc private func openAsk() { openHub(.ask) }
 
-    @objc private func openSettings() { openHub(.dictation) }
+    @objc private func openSettings() { openHub(.dictationSettings) }
 
-    /// Library, Ask, and Settings all live in one hub window; the menu item just
-    /// selects which section it lands on (an already-open hub navigates live).
+    /// Dictations, Meetings, Ask, and Settings all live in one hub window; the
+    /// menu item just selects which section it lands on (an already-open hub
+    /// navigates live).
     private func openHub(_ section: HubSection) {
         HubState.shared.section = section
         WindowRouter.shared.show(id: "hub", title: "Radio Operator",
-                                 size: NSSize(width: 980, height: 660)) {
+                                 size: NSSize(width: 1120, height: 700),
+                                 darkChrome: true) {
             HubView().environmentObject(SettingsStore.shared)
         }
     }
 
     private func openOnboarding() {
         WindowRouter.shared.show(id: "onboarding", title: "Welcome to Radio Operator",
-                                 size: NSSize(width: 640, height: 640)) {
+                                 size: NSSize(width: 940, height: 760),
+                                 darkChrome: true) {
             OnboardingView().environmentObject(SettingsStore.shared)
         }
     }

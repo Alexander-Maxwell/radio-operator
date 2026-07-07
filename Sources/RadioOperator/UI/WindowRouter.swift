@@ -12,6 +12,7 @@ final class WindowRouter: NSObject, NSWindowDelegate {
 
     func show<Content: View>(id: String, title: String, size: NSSize,
                              resizable: Bool = true,
+                             darkChrome: Bool = false,
                              @ViewBuilder content: () -> Content) {
         if let existing = windows[id] {
             existing.makeKeyAndOrderFront(nil)
@@ -27,6 +28,14 @@ final class WindowRouter: NSObject, NSWindowDelegate {
             defer: false
         )
         window.title = title
+        if darkChrome {
+            // Redesigned surfaces are dark-committed: the title bar blends
+            // into the app background regardless of the system appearance.
+            window.titlebarAppearsTransparent = true
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = NSColor(srgbRed: 10 / 255, green: 11 / 255,
+                                             blue: 13 / 255, alpha: 1)
+        }
         window.isReleasedWhenClosed = false
         window.center()
         window.contentViewController = NSHostingController(rootView: content())

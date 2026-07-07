@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.3.1"
+VERSION="0.4.0"
 swift build -c release
 
 APP="build/Radio Operator.app"
@@ -65,6 +65,12 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 if [ -f resources/RadioOperator.icns ]; then
   cp resources/RadioOperator.icns "$APP/Contents/Resources/"
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string RadioOperator" "$APP/Contents/Info.plist" 2>/dev/null || true
+fi
+
+# Bundled UI fonts (Space Grotesk + IBM Plex Mono, OFL — licenses ship too).
+if [ -d resources/fonts ]; then
+  mkdir -p "$APP/Contents/Resources/fonts"
+  cp resources/fonts/*.ttf resources/fonts/OFL-*.txt "$APP/Contents/Resources/fonts/" 2>/dev/null || true
 fi
 
 # Sign with the hardened runtime + least-privilege entitlements everywhere,
