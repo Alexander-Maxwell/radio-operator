@@ -9,21 +9,47 @@ import SwiftUI
 /// note — the markdown notes stay the source of truth (and stay Obsidian-Tasks
 /// compatible, so the same tasks show in the vault). Manual add (Unit 4),
 /// filter/sort controls, reminders (Unit 6), and recurrence (Unit 7) follow.
+/// How the Tasks list is grouped.
+enum TaskGroupMode: String, CaseIterable, Sendable {
+    case meeting, date, project
+    var label: String {
+        switch self {
+        case .meeting: "Meeting"
+        case .date:    "Due date"
+        case .project: "Project"
+        }
+    }
+}
+
 struct TasksView: View {
     @State private var tasks: [RadioTask] = []
     @State private var newText = ""
     @State private var newDue: TaskDuePreset?
     @State private var newPriority: TaskPriority?
-    @State private var groupByProject = false
+    @State private var groupMode: TaskGroupMode = .meeting
 
     private var open: [RadioTask] { tasks.filter { !$0.done } }
     private var done: [RadioTask] { tasks.filter { $0.done } }
 
-    private var projectGroups: [(key: String, items: [RadioTask])] {
-        Dictionary(grouping: open) { $0.project ?? "No project" }
-            .map { (key: $0.key, items: $0.value.sorted(by: Self.openBefore)) }
-            .sorted { $0.key < $1.key }
+    /// Group ALL tasks (open + done) by a key. Items sort open-first then by the
+    /// usual order, so a completed task stays in its group (struck through) — an
+    /// accidental check is one tap to undo, not a hunt in a separate pile.
+    /// Groups with any open task sort ahead of fully-completed ones.
+    private func groups(by key: (RadioTask) -> String) -> [(key: String, items: [RadioTask])] {
+        Dictionary(grouping: tasks, by: key)
+            .map { (key: $0.key, items: $0.value.sorted(by: Self.rowOrder)) }
+            .sorted { a, b in
+                let ao = a.items.contains { !$0.done }, bo = b.items.contains { !$0.done }
+                if ao != bo { return ao }
+                return a.key.localizedCaseInsensitiveCompare(b.key) == .orderedAscending
+            }
     }
+
+    private func meetingKey(_ t: RadioTask) -> String {
+        switch t.source { case .meeting(let title): title; case .manual: "Manual" }
+    }
+
+    private func openIn(_ items: [RadioTask]) -> Int { items.filter { !$0.done }.count }
 
     private func bucket(_ t: RadioTask) -> TaskBucket { TaskBucket.of(due: t.due, now: Date()) }
     private func count(_ b: TaskBucket) -> Int { open.filter { bucket($0) == b }.count }
@@ -163,12 +189,18 @@ struct TasksView: View {
             metricsRow
             controlsRow
             LazyVStack(alignment: .leading, spacing: 0) {
-                if groupByProject {
-                    ForEach(projectGroups, id: \.key) { g in
-                        sectionHeader(g.key == "No project" ? g.key : "#\(g.key)", g.items.count, Theme.speakerRemote)
+                switch groupMode {
+                case .meeting:
+                    ForEach(groups(by: meetingKey), id: \.key) { g in
+                        sectionHeader(g.key, openIn(g.items), Theme.speakerRemote)
                         ForEach(g.items) { row($0) }
                     }
-                } else {
+                case .project:
+                    ForEach(groups(by: { $0.project ?? "No project" }), id: \.key) { g in
+                        sectionHeader(g.key == "No project" ? g.key : "#\(g.key)", openIn(g.items), Theme.speakerRemote)
+                        ForEach(g.items) { row($0) }
+                    }
+                case .date:
                     ForEach(TaskBucket.allCases, id: \.self) { b in
                         let items = open.filter { bucket($0) == b }.sorted(by: Self.openBefore)
                         if !items.isEmpty {
@@ -176,10 +208,10 @@ struct TasksView: View {
                             ForEach(items) { row($0) }
                         }
                     }
-                }
-                if !done.isEmpty {
-                    sectionHeader("Done", done.count, Theme.textMeta).padding(.top, 12)
-                    ForEach(done) { row($0) }
+                    if !done.isEmpty {
+                        sectionHeader("Completed", done.count, Theme.textMeta).padding(.top, 12)
+                        ForEach(done) { row($0) }
+                    }
                 }
             }
             .padding(.horizontal, 14).padding(.bottom, 24)
@@ -189,10 +221,11 @@ struct TasksView: View {
     private var controlsRow: some View {
         HStack(spacing: 8) {
             Menu {
-                Button("Due date") { groupByProject = false }
-                Button("Project") { groupByProject = true }
+                ForEach(TaskGroupMode.allCases, id: \.self) { m in
+                    Button(m.label) { groupMode = m }
+                }
             } label: {
-                addChip(icon: "square.stack.3d.up", text: "Group: \(groupByProject ? "Project" : "Due")")
+                addChip(icon: "square.stack.3d.up", text: "Group: \(groupMode.label)")
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             Spacer()
@@ -232,9 +265,10 @@ struct TasksView: View {
                 Image(systemName: task.done ? "checkmark.square.fill" : "square")
                     .font(.system(size: 15))
                     .foregroundStyle(task.done ? Theme.green : Theme.textFaint)
+                    .frame(width: 26, height: 24, alignment: .topLeading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -334,6 +368,14 @@ struct TasksView: View {
               let updated = MeetingNoteParser.togglingCheckbox(in: content, sourceLine: task.sourceLine)
         else { return }
         try? updated.write(to: task.sourceFile, atomically: true, encoding: .utf8)
+        // Optimistic: flip in memory immediately so the checkbox is instantly
+        // consistent and a fast re-tap can't act on a stale line while the
+        // background rescan is still in flight (that window made undo feel stuck).
+        if let i = tasks.firstIndex(where: { $0.id == task.id && $0.sourceLine == task.sourceLine }),
+           let flipped = MeetingNoteParser.togglingCheckbox(in: task.sourceLine, sourceLine: task.sourceLine) {
+            tasks[i].sourceLine = flipped
+            tasks[i].done.toggle()
+        }
         reload()
     }
 
@@ -381,6 +423,12 @@ struct TasksView: View {
     }
 
     // MARK: Sort / color
+
+    /// Order within a group: open tasks before completed, then the open order.
+    private static func rowOrder(_ a: RadioTask, _ b: RadioTask) -> Bool {
+        if a.done != b.done { return !a.done }
+        return openBefore(a, b)
+    }
 
     private static func openBefore(_ a: RadioTask, _ b: RadioTask) -> Bool {
         switch (a.due, b.due) {
