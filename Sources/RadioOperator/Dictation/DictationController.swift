@@ -202,6 +202,12 @@ final class DictationController {
                     throw NSError(domain: "Radio Operator", code: 2, userInfo: [
                         NSLocalizedDescriptionKey: "Speech model unavailable for \(locale.identifier)."])
                 }
+                // Dictation never uses Voice-Processing I/O: there is no far-end
+                // echo to cancel, and VPIO reconfigures the input device (badly
+                // on multi-channel mics) and can gate speech to silence — which
+                // would strand a dictation with no finals (no paste, no record).
+                // Only meetings enable AEC. Set before the engine's first start.
+                MicCapture.shared.voiceProcessing = false
                 // Mic first so buffers queue into the transcriber's input
                 // stream while the analyzer spins up.
                 let token = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in

@@ -71,9 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Route capture to the user's chosen microphone (nil = system default).
         MicCapture.shared.preferredDeviceUID = SettingsStore.shared.data.micDeviceUID
 
-        // Hardware echo cancellation on the mic mirrors the setting; applied on
-        // the next engine start.
-        MicCapture.shared.voiceProcessing = SettingsStore.shared.data.micEchoCancellation
+        // Voice-Processing I/O (hardware AEC) is a meeting-only concern and is
+        // set per-capture-session by the controllers (dictation = off, meeting =
+        // the micEchoCancellation setting). Default off so a first dictation
+        // before any meeting never inherits it.
+        MicCapture.shared.voiceProcessing = false
 
         // Auto-start a meeting when another app grabs the mic (a call begins).
         let monitor = MicActivityMonitor()

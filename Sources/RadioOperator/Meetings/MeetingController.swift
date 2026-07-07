@@ -146,7 +146,9 @@ final class MeetingController: ObservableObject {
             systemRecorder = AudioRecorder(url: audioDir.appendingPathComponent("\(stem) - them.m4a"), format: format)
         }
 
-        // Wire audio
+        // Wire audio. Meetings honor the hardware-AEC setting (dictation never
+        // does); set before the engine's first start for this session.
+        MicCapture.shared.voiceProcessing = SettingsStore.shared.data.micEchoCancellation
         do {
             let micRecorder = self.micRecorder
             micToken = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in
