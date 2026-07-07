@@ -192,19 +192,78 @@ struct HubView: View {
 
 private struct HubSidebar: View {
     @Binding var selection: HubSection
+    @State private var settingsHover = false
+    @State private var backHover = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            group("CONSOLE", [.dictations, .meetings, .tasks, .ask])
-                .padding(.top, 14)
-            group("SETTINGS", [.dictationSettings, .meetingSettings, .intelligence,
-                               .dictionary, .snippets, .privacy, .general])
-                .padding(.top, 22)
-            Spacer(minLength: 12)
+            if selection.isConsole {
+                group("CONSOLE", [.dictations, .meetings, .tasks, .ask])
+                    .padding(.top, 14)
+                Spacer(minLength: 12)
+                settingsEntry
+            } else {
+                backToConsole
+                    .padding(.top, 14)
+                group("SETTINGS", [.dictationSettings, .meetingSettings, .intelligence,
+                                   .dictionary, .snippets, .privacy, .general])
+                    .padding(.top, 6)
+                Spacer(minLength: 12)
+            }
             footer
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.bgSidebar)
+        .animation(.easeInOut(duration: 0.18), value: selection.isConsole)
+    }
+
+    /// Pinned above the footer in console mode: one entry into all settings.
+    private var settingsEntry: some View {
+        Button { selection = .dictationSettings } label: {
+            HStack(spacing: 11) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13.5, weight: .medium))
+                    .frame(width: 18)
+                Text("Settings")
+                    .font(Theme.display(13.5, .medium))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textMono)
+            }
+            .foregroundStyle(Theme.sidebarIdle)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(settingsHover ? Theme.lift(0.03) : .clear))
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { settingsHover = $0 }
+        .padding(.bottom, 8)
+    }
+
+    /// Top of settings mode: returns to the console list.
+    private var backToConsole: some View {
+        Button { selection = .dictations } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 18)
+                Text("Back")
+                    .font(Theme.display(13.5, .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(backHover ? Theme.textMax : Theme.sidebarIdle)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(backHover ? Theme.lift(0.03) : .clear))
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { backHover = $0 }
+        .padding(.bottom, 6)
     }
 
     private func group(_ label: String, _ sections: [HubSection]) -> some View {
