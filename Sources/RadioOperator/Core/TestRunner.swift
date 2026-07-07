@@ -51,6 +51,7 @@ enum TestRunner {
         ("AudioLevel", AudioLevelTestCases.run),
         ("CaptureSilence", CaptureSilenceTestCases.run),
         ("TaskLine", TaskLineTestCases.run),
+        ("TaskIndex", TaskIndexTestCases.run),
         ("ClaudeService", ClaudeServiceTestCases.run),
         ("StressProbe", StressProbeTestCases.run),
         ("Preflight", PreflightTestCases.run),
