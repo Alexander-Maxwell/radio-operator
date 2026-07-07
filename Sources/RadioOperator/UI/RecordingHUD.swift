@@ -293,11 +293,8 @@ struct RecordingHUDView: View {
         Button {
             hud.collapsed = false
         } label: {
-            HStack(spacing: 8) {
-                MarkGlyph(size: 16, live: true)
-                FlowWave(level: max(state.meetingMeLevel, state.meetingThemLevel),
-                         live: true, width: 96, height: 18)
-            }
+            FlowWave(level: max(state.meetingMeLevel, state.meetingThemLevel),
+                     live: true, width: 112, height: 20)
             .padding(6)
             .contentShape(Rectangle())
             .shadow(color: .black.opacity(0.28), radius: 4, y: 1)

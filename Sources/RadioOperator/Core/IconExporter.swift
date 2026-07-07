@@ -70,28 +70,11 @@ enum IconExporter {
         tile.setFill()
         tilePath.fill()
 
-        // The R-in-O mark. `app-icon.svg` draws the standard variant across the
-        // full 200-grid, so drawing into the whole tile reproduces it 1:1. Below
-        // 48px the R turns muddy, so drop it and ship the ring alone.
-        if px >= 48 {
-            MenuBarIcon.draw(in: rect, color: markColor, variant: .standard)
-        } else {
-            ringOnly(in: rect, color: markColor)
-        }
+        // The Morse "R over O" mark, cream on the tile.
+        MenuBarIcon.draw(in: rect, color: markColor, variant: .standard)
 
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])
-    }
-
-    /// Just the O ring, for the smallest sizes where the R stops reading.
-    private static func ringOnly(in rect: NSRect, color: NSColor) {
-        color.set()
-        let s = min(rect.width, rect.height) / 200.0
-        let c = NSPoint(x: rect.midX, y: rect.midY)
-        let rr = 66 * s
-        let ring = NSBezierPath(ovalIn: NSRect(x: c.x - rr, y: c.y - rr, width: 2 * rr, height: 2 * rr))
-        ring.lineWidth = 14 * s
-        ring.stroke()
     }
 
     private static func warn(_ msg: String) {

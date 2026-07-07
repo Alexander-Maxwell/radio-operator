@@ -88,14 +88,11 @@ struct PillView: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 8) {
-                MarkGlyph(size: 16, live: isLive)
-                content
-            }
-            .fixedSize(horizontal: true, vertical: true)
-            // No background — a soft shadow lifts the mark + wave off the desktop.
-            .shadow(color: .black.opacity(0.28), radius: 4, y: 1)
-            .animation(.spring(response: 0.26, dampingFraction: 0.85), value: pillPhase)
+            content
+                .fixedSize(horizontal: true, vertical: true)
+                // No background — a soft shadow lifts the wave off the desktop.
+                .shadow(color: .black.opacity(0.28), radius: 4, y: 1)
+                .animation(.spring(response: 0.26, dampingFraction: 0.85), value: pillPhase)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 4)
@@ -161,36 +158,6 @@ struct PillView: View {
         if isTranscribing { return "Radio Operator: transcribing" }
         if isLive { return "Radio Operator: recording" }
         return "Radio Operator: ready"
-    }
-}
-
-// MARK: - Mark with a subtle "listening" pulse
-
-/// The violet R-in-O mark, scaled/opacity-pulsed on the O ring (~1.7s loop)
-/// while live to reinforce "listening." Static under Reduce Motion. Shared by
-/// the dictation pill and the meeting HUD.
-struct MarkGlyph: View {
-    let size: CGFloat
-    let live: Bool
-
-    @State private var pulse = false
-
-    private var reduceMotion: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }
-
-    var body: some View {
-        Image(nsImage: MenuBarIcon.emblem(color: Palette.markNS, size: size))
-            .frame(width: size, height: size)
-            .scaleEffect(live && pulse && !reduceMotion ? 1.03 : 1)
-            .opacity(live && pulse && !reduceMotion ? 0.88 : 1)
-            .onChange(of: live) { _, isLive in
-                pulse = false
-                guard isLive, !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
-                    pulse = true
-                }
-            }
     }
 }
 
