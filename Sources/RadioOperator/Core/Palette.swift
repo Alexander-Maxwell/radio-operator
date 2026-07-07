@@ -1,31 +1,27 @@
 import SwiftUI
 import AppKit
 
-/// Tokens for the recording pill — a translucent "liquid glass" capsule (frosted
-/// vibrancy over the desktop) carrying a flowing, multi-hued waveform. Violet
-/// stays the lead brand hue; teal + a warm gold sparkle give it depth. Text and
-/// the mark are dark/violet so they read on the light frosted glass.
+/// Tokens for the recording pill — a dark near-black capsule carrying a
+/// Morse-code meter (wide bars = dashes, narrow = dots) that rides the mic
+/// level. Violet-bright on the dark field; white-alpha labels. Values are the
+/// `--ro-pill-*` / `--ro-primary-bright` tokens from the locked violet palette.
 enum Palette {
-    /// A faint white wash over the vibrancy so the pill keeps a light body over
-    /// dark desktops (keeps dark text legible on any backdrop).
-    static let glassTint = Color.white.opacity(0.30)
-    /// Glass rim: bright top highlight → faint bottom shade, sells the bevel.
-    static let glassRimTop = Color.white.opacity(0.70)
-    static let glassRimBottom = Color.black.opacity(0.06)
+    /// Pill background: near-black, warm-neutral (--ro-pill-bg #17181B).
+    static let pillBG = Color(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1B / 255)
+    /// Pill border while recording (violet at 0.40).
+    static let pillBorder = Color(red: 143 / 255, green: 127 / 255, blue: 255 / 255).opacity(0.40)
+    /// Pill border at rest (subtle white hairline).
+    static let pillBorderIdle = Color.white.opacity(0.08)
+    /// Pill labels — Ready / Transcribing / Saved.
+    static let pillText = Color.white.opacity(0.82)
+    /// Pill timer, mono.
+    static let pillMeta = Color.white.opacity(0.55)
 
-    /// Labels on glass — Ready / Transcribing / Saved (dark ink).
-    static let pillText = Color(red: 0.14, green: 0.11, blue: 0.24).opacity(0.82)
-    /// Timer, mono (muted violet-ink).
-    static let pillMeta = Color(red: 0.34, green: 0.30, blue: 0.50).opacity(0.90)
+    /// The Morse meter + mark on the pill: violet, brighter for contrast on the
+    /// near-black field (--ro-primary-bright #8F7FFF).
+    static let mark = Color(red: 143 / 255, green: 127 / 255, blue: 255 / 255)
+    static let markNS = NSColor(srgbRed: 143 / 255, green: 127 / 255, blue: 255 / 255, alpha: 1)
 
-    /// The R mark on glass — violet primary (#6C5CE7).
-    static let mark = Color(red: 0x6C / 255, green: 0x5C / 255, blue: 0xE7 / 255)
-    /// Same violet as an NSColor for the vector `MenuBarIcon.emblem`.
-    static let markNS = NSColor(srgbRed: 0x6C / 255, green: 0x5C / 255, blue: 0xE7 / 255, alpha: 1)
-
-    /// Live microphone / errors — the load-bearing "red = live".
-    static let alert = Color(red: 0xCF / 255, green: 0x3A / 255, blue: 0x28 / 255)
-
-    /// Idle flow line tint (Ready resting state).
-    static let idleFlow = Color(red: 0.55, green: 0.50, blue: 0.64).opacity(0.55)
+    /// Live microphone / errors on the pill — the load-bearing "red = live".
+    static let alert = Color(red: 0xF0 / 255, green: 0x67 / 255, blue: 0x4F / 255)
 }
