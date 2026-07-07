@@ -7,6 +7,12 @@ import AudioToolbox
 /// simultaneously). The engine runs only while at least one subscriber is
 /// active. Buffer callbacks fire on the audio thread — subscribers must be
 /// fast (they should just yield into an AsyncStream).
+extension Notification.Name {
+    /// Posted when capture keeps returning pure silence even after voice
+    /// processing was cleared — i.e. we could not auto-recover the mic.
+    static let micCapturePersistentSilence = Notification.Name("MicCapturePersistentSilence")
+}
+
 final class MicCapture: @unchecked Sendable {
     static let shared = MicCapture()
 
@@ -29,6 +35,13 @@ final class MicCapture: @unchecked Sendable {
     // (auto-start / the mic monitor) latched VPIO onto the shared device and
     // silenced the next dictation.
     private var _voiceProcessing = false
+
+    // Start-of-capture silence watchdog state (see CaptureSilenceCheck). Guarded
+    // by `lock`; `_engineGeneration` invalidates a pending check after a rebuild.
+    private var _engineVoiceProcessing = false
+    private var _engineGeneration = 0
+    private var _sawSignalThisEngine = false
+    private var _healedThisSession = false
 
     private init() {}
 
@@ -94,6 +107,7 @@ final class MicCapture: @unchecked Sendable {
         subscribers[id] = Subscriber(onBuffer: onBuffer, onLevel: onLevel)
         if subscribers.count == 1 {
             outputFormat = format
+            _healedThisSession = false
             try startEngineLocked()
         }
         return id
@@ -129,6 +143,9 @@ final class MicCapture: @unchecked Sendable {
         // Fresh engine every start: retargeting a reused engine's input
         // device is unreliable.
         engine = AVAudioEngine()
+        _engineVoiceProcessing = voiceProcessing
+        _engineGeneration &+= 1
+        _sawSignalThisEngine = false
         let input = engine.inputNode
         // Voice-Processing I/O (hardware AEC) is a STICKY, device-level change:
         // a fresh engine that merely omits the enable can inherit a VPIO state
@@ -168,6 +185,8 @@ final class MicCapture: @unchecked Sendable {
         ) { [weak self] _ in
             self?.handleConfigChange()
         }
+
+        scheduleSilenceWatchdogLocked()
     }
 
     /// Routes the engine's input to the user-chosen device. Falls back to the
@@ -209,6 +228,42 @@ final class MicCapture: @unchecked Sendable {
         lastBufferAt = nil
     }
 
+    /// After each engine start, verify the mic is actually delivering audio and
+    /// not just silent buffers (the VPIO/AEC-silences-mic signature). Self-heals
+    /// by rebuilding without voice processing; if it still can't, surfaces it.
+    private func scheduleSilenceWatchdogLocked() {
+        let generation = _engineGeneration
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.3) { [weak self] in
+            self?.runSilenceWatchdog(generation: generation)
+        }
+    }
+
+    private func runSilenceWatchdog(generation: Int) {
+        lock.lock()
+        guard generation == _engineGeneration, !subscribers.isEmpty else { lock.unlock(); return }
+        let action = CaptureSilenceCheck.decide(
+            buffersArrived: lastBufferAt != nil,
+            sawSignal: _sawSignalThisEngine,
+            voiceProcessingActive: _engineVoiceProcessing,
+            alreadyHealed: _healedThisSession)
+        switch action {
+        case .ok, .waiting:
+            lock.unlock()
+        case .selfHeal:
+            _healedThisSession = true
+            _voiceProcessing = false
+            NSLog("MicCapture: mic delivered only silence with VPIO on — self-healing (rebuild without voice processing)")
+            stopEngineLocked(clearFormat: false)
+            do { try startEngineLocked() }
+            catch { NSLog("MicCapture: self-heal rebuild failed — \(error.localizedDescription)") }
+            lock.unlock()
+        case .reportSilent:
+            NSLog("MicCapture: mic still silent after voice processing cleared — check the input device or mute switch")
+            lock.unlock()
+            NotificationCenter.default.post(name: .micCapturePersistentSilence, object: nil)
+        }
+    }
+
     private func handleConfigChange() {
         lock.lock()
         defer { lock.unlock() }
@@ -231,7 +286,13 @@ final class MicCapture: @unchecked Sendable {
         let converter = self.converter
         let outputFormat = self.outputFormat
         lastBufferAt = Date()
+        let needSignalCheck = !_sawSignalThisEngine
         lock.unlock()
+        // Watchdog: latch the first non-silent buffer of this engine. Runs only
+        // until signal is seen, so it costs nothing in the steady state.
+        if needSignalCheck && MicCapture.amplitude(of: buffer).peak > 0.0005 {
+            lock.lock(); _sawSignalThisEngine = true; lock.unlock()
+        }
         guard !subs.isEmpty, let converter, let outputFormat else { return }
 
         let level = MicCapture.rmsLevel(buffer)
