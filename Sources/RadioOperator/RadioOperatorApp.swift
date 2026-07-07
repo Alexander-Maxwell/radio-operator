@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if TestRunner.handleIfRequested() { return }
         if ProbeRunner.handleIfRequested() { return }
         if MCPRunner.handleIfRequested() { return }
+        if EvalRunner.handleIfRequested() { return }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate

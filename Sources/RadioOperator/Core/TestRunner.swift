@@ -55,6 +55,13 @@ enum TestRunner {
         ("PanicWipe", PanicWipeTestCases.run),
         ("Template", TemplateTestCases.run),
         ("AppRule", AppRuleTestCases.run),
+        ("EvalNormalizer", EvalNormalizerTestCases.run),
+        ("EvalParser", EvalParserTestCases.run),
+        ("EvalAlignment", EvalAlignmentTestCases.run),
+        ("EvalSummary", EvalSummaryTestCases.run),
+        ("EvalTerms", EvalTermsTestCases.run),
+        ("EvalValidity", EvalValidityTestCases.run),
+        ("EvalRunner", EvalRunnerTestCases.run),
     ]
 
     /// Device tier: suites that need real hardware, TCC grants, or a signed-in

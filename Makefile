@@ -1,4 +1,4 @@
-.PHONY: build test test-core test-json probe probe-ask probe-wer app run install release clean reset-tcc
+.PHONY: build test test-core test-json probe probe-ask probe-wer eval eval-quick eval-baseline app run install release clean reset-tcc
 
 build:
 	swift build
@@ -29,6 +29,24 @@ probe-ask: build
 # {audio, reference, locale?}). The number that gates engine decisions.
 probe-wer: build
 	@echo "usage: .build/debug/RadioOperator --probe-wer <manifest.json>"
+
+# Quality scorecard over the golden meeting set (spec: eval/ + the V4 vault's
+# eval-harness spec). Golden data is private and lives OUTSIDE this repo:
+# set GOLDEN_DIR. Exit codes: 0 pass, 1 regression, 2 hard gate, 3 infra,
+# 4 integrity/anti-circularity.
+EVAL_OVERRIDES = $(if $(SUBSET),--subset "$(SUBSET)") $(if $(REPORT_DIR),--report-dir "$(REPORT_DIR)")
+
+eval: build
+	.build/debug/RadioOperator --eval "$${GOLDEN_DIR:?set GOLDEN_DIR to the private golden-set directory}" $(EVAL_OVERRIDES) $(EVAL_FLAGS)
+
+# Diagnostic run with unverified (draft) references: numbers print, nothing is
+# gradeable, the baseline is never written or compared (the binary refuses).
+eval-quick: build
+	.build/debug/RadioOperator --eval "$${GOLDEN_DIR:?set GOLDEN_DIR}" --allow-draft-references $(EVAL_OVERRIDES) $(EVAL_FLAGS)
+
+# Ratchet: full eval then commit the new baseline in the SAME PR (spec 5.3).
+eval-baseline: build
+	.build/debug/RadioOperator --eval "$${GOLDEN_DIR:?set GOLDEN_DIR}" --write-baseline $(EVAL_OVERRIDES) $(EVAL_FLAGS)
 
 app:
 	bash scripts/bundle.sh

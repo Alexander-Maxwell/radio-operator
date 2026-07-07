@@ -1,0 +1,21 @@
+{
+  "egress_posture": "declared-egress",
+  "epsilons": {
+    "wer_worst_track": 0.005,
+    "wer_me": 0.005,
+    "wer_them": 0.005,
+    "attribution_2party": 0.005,
+    "term_accuracy": 0.005,
+    "action_item_f1": 0.02,
+    "hallucinated_owner": 0.0,
+    "output_validity": 0.0
+  },
+  "hard_gates": {
+    "attribution_2party": "ws2-capture-hardening",
+    "wer_worst_track": "ws3-normalizer",
+    "term_accuracy": "ws3-normalizer",
+    "action_item_f1": "summarizer-decision",
+    "hallucinated_owner": "summarizer-decision",
+    "output_validity": "ws4-output-hygiene"
+  }
+}
