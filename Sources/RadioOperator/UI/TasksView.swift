@@ -119,7 +119,7 @@ struct TasksView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 11).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.035)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.lift(0.05)))
     }
 
     // MARK: Quick add
@@ -159,7 +159,7 @@ struct TasksView: View {
             .disabled(!canAdd)
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.04)))
+        .background(RoundedRectangle(cornerRadius: 9).fill(Theme.lift(0.05)))
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.hairline(0.08)))
         .padding(.horizontal, 14).padding(.bottom, 8)
     }
@@ -174,7 +174,7 @@ struct TasksView: View {
         }
         .font(Theme.display(11)).foregroundStyle(Theme.textDim)
         .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .background(Capsule().fill(Theme.lift(0.06)))
     }
 
     private func addTask() {
@@ -447,7 +447,7 @@ struct TasksView: View {
 
     @ViewBuilder private var detailOverlay: some View {
         if let task = selected {
-            Color.black.opacity(0.35)
+            Color.black.opacity(0.25)
                 .ignoresSafeArea()
                 .onTapGesture { closeDetail() }
                 .transition(.opacity)
@@ -591,7 +591,7 @@ struct TasksView: View {
             if !detailSubtasks.isEmpty {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.06))
+                        Capsule().fill(Theme.lift(0.12))
                         Capsule().fill(Theme.green).frame(width: geo.size.width * subtaskFraction)
                     }
                 }
