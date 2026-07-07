@@ -58,7 +58,13 @@ enum PreviewExporter {
             NSBezierPath(rect: NSRect(x: x, y: y, width: cell, height: cell)).fill()
             let gRect = NSRect(x: x + (cell - glyph) / 2, y: y + (cell - glyph) / 2,
                                width: glyph, height: glyph)
-            MenuBarIcon.draw(in: gRect, color: sw.glyphColor, variant: .menubar)
+            // Render each glyph in its OWN NSImage — the real menu-bar path
+            // (one draw per fresh context), so it matches what ships.
+            let g = NSImage(size: NSSize(width: glyph, height: glyph), flipped: false) { r in
+                MenuBarIcon.draw(in: r, color: sw.glyphColor, variant: .menubar)
+                return true
+            }
+            g.draw(in: gRect)
         }
         NSGraphicsContext.restoreGraphicsState()
         write(rep, "menubar-glyph.png", dir)

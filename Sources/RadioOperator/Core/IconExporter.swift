@@ -90,7 +90,7 @@ enum IconExporter {
         let c = NSPoint(x: rect.midX, y: rect.midY)
         let rr = 66 * s
         let ring = NSBezierPath(ovalIn: NSRect(x: c.x - rr, y: c.y - rr, width: 2 * rr, height: 2 * rr))
-        ring.lineWidth = 15 * s
+        ring.lineWidth = 14 * s
         ring.stroke()
     }
 

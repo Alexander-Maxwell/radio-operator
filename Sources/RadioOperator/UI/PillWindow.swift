@@ -94,27 +94,21 @@ struct PillView: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 11) {
+            HStack(spacing: 9) {
                 mark
                 content
             }
-            .padding(.leading, 11)
-            .padding(.trailing, 18)
-            .padding(.vertical, 9)
+            .padding(.leading, 10)
+            .padding(.trailing, 14)
+            .padding(.vertical, 6)
             .fixedSize(horizontal: true, vertical: true)
             .background(Capsule(style: .continuous).fill(Palette.pillBG))
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(isLive ? Palette.pillBorder : Palette.pillBorderIdle, lineWidth: 1)
+                    .strokeBorder(isLive ? Palette.pillBorder : Palette.pillBorderIdle,
+                                  lineWidth: 0.75)
             )
-            // Base drop shadow, plus a faint violet "listening" glow while live.
-            .shadow(color: .black.opacity(0.45), radius: 14, y: 12)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Palette.mark.opacity(isLive ? 0.06 : 0))
-                    .blur(radius: 6)
-                    .padding(-4)
-            )
+            .shadow(color: .black.opacity(0.34), radius: 8, y: 4)
             .animation(.spring(response: 0.26, dampingFraction: 0.85), value: pillPhase)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -129,7 +123,7 @@ struct PillView: View {
     // MARK: Left mark (always present) — violet R-in-O, with a listening pulse.
 
     private var mark: some View {
-        MarkGlyph(size: 27, live: isLive)
+        MarkGlyph(size: 19, live: isLive)
     }
 
     // MARK: State-dependent trailing content
@@ -140,31 +134,31 @@ struct PillView: View {
         } else if let notice = state.commandNotice {
             noticeRow(icon: "wand.and.stars", tint: Palette.mark, text: notice)
         } else if isSaved {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .font(.system(size: 10.5, weight: .bold))
                     .foregroundStyle(Palette.mark)
                 Text("Saved to notes")
-                    .font(Theme.display(13, .medium))
+                    .font(Theme.display(12.5, .medium))
                     .foregroundStyle(Palette.pillText)
             }
         } else if isTranscribing {
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 Text("Transcribing")
-                    .font(Theme.display(13, .medium))
+                    .font(Theme.display(12.5, .medium))
                     .foregroundStyle(Palette.pillText)
                 TranscribingDots()
             }
         } else if isLive {
-            HStack(spacing: 11) {
+            HStack(spacing: 9) {
                 RoMeter(level: state.micLevel, live: true)
                 TimerLabel(start: recordingStart)
             }
         } else {
             // Ready — compact resting form.
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Text("Ready")
-                    .font(Theme.display(13, .medium))
+                    .font(Theme.display(12.5, .medium))
                     .foregroundStyle(Palette.pillText)
                 RoMeter(level: 0, live: false)
             }
@@ -172,12 +166,12 @@ struct PillView: View {
     }
 
     private func noticeRow(icon: String, tint: Color, text: String) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Image(systemName: icon)
                 .foregroundStyle(tint)
-                .font(.system(size: 13))
+                .font(.system(size: 11.5))
             Text(text)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 12.5, weight: .medium))
                 .foregroundStyle(Palette.pillText)
                 .lineLimit(2)
                 .frame(maxWidth: 275, alignment: .leading)
@@ -221,8 +215,8 @@ private struct MarkGlyph: View {
     var body: some View {
         Image(nsImage: MenuBarIcon.emblem(color: Palette.markNS, size: size))
             .frame(width: size, height: size)
-            .scaleEffect(live && pulse && !reduceMotion ? 1.06 : 1)
-            .opacity(live && pulse && !reduceMotion ? 0.82 : 1)
+            .scaleEffect(live && pulse && !reduceMotion ? 1.03 : 1)
+            .opacity(live && pulse && !reduceMotion ? 0.88 : 1)
             .onChange(of: live) { _, isLive in
                 pulse = false
                 guard isLive, !reduceMotion else { return }
@@ -241,33 +235,34 @@ private struct MarkGlyph: View {
 struct RoMeter: View {
     let level: Float
     var live: Bool = true
-    var barCount: Int = 13
-    var maxHeight: CGFloat = 32
+    var barCount: Int = 11
+    var maxHeight: CGFloat = 22
 
     private var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    // Center-weighted envelope: tall in the middle, short tails.
+    // Center-weighted envelope: tall in the middle, short tails. Gentle texture
+    // so the row reads clean, not jagged.
     private func envelope(_ i: Int) -> CGFloat {
         let x = Double(i) / Double(max(1, barCount - 1))    // 0…1
         let bell = sin(.pi * x)                              // 0 at ends, 1 center
-        let texture = 0.72 + 0.28 * sin(x * 23)
+        let texture = 0.84 + 0.16 * sin(x * 17)
         return CGFloat(bell * bell * texture)
     }
 
     private func barHeight(_ i: Int) -> CGFloat {
-        guard live else { return 4 }                        // idle: flat 4px
-        let lvl = CGFloat(max(0.14, min(1, level)))
-        return 5 + envelope(i) * (maxHeight - 5) * lvl
+        guard live else { return 3 }                        // idle: flat 3px
+        let lvl = CGFloat(max(0.16, min(1, level)))
+        return 4 + envelope(i) * (maxHeight - 4) * lvl
     }
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                RoundedRectangle(cornerRadius: 1.25, style: .continuous)
                     .fill(live ? Palette.mark : Palette.meterIdle)
-                    .frame(width: 3, height: barHeight(i))
+                    .frame(width: 2.5, height: barHeight(i))
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.11), value: level)
             }
         }
@@ -288,11 +283,11 @@ private struct TranscribingDots: View {
     private let timer = Timer.publish(every: 0.28, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3.5) {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .fill(Palette.mark)
-                    .frame(width: 5, height: 5)
+                    .frame(width: 4.5, height: 4.5)
                     .opacity(opacity(i))
             }
         }
@@ -323,7 +318,7 @@ private struct TimerLabel: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { context in
             Text(elapsed(to: context.date))
-                .font(Theme.mono(12, .medium))
+                .font(Theme.mono(11, .medium))
                 .tracking(0.5)
                 .foregroundStyle(Palette.pillMeta)
                 .monospacedDigit()
