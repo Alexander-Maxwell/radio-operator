@@ -58,8 +58,8 @@ enum MenuBarIcon {
         // size (in grid units) for the R; it's optically centered by ink bounds.
         let ringR: CGFloat, ringW: CGFloat, glyphPt: CGFloat
         switch variant {
-        case .standard: ringR = 66; ringW = 14; glyphPt = 112
-        case .menubar:  ringR = 78; ringW = 15; glyphPt = 122
+        case .standard: ringR = 66; ringW = 13; glyphPt = 92
+        case .menubar:  ringR = 78; ringW = 14; glyphPt = 102
         }
 
         color.set()
@@ -81,7 +81,7 @@ enum MenuBarIcon {
     /// reliably regardless of prior drawing state.
     private static func drawR(center: NSPoint, pointSize: CGFloat, color: NSColor) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let font = NSFont.systemFont(ofSize: pointSize, weight: .black)
+        let font = NSFont.systemFont(ofSize: pointSize, weight: .heavy)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,

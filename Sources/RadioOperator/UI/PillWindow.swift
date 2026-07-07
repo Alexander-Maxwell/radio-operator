@@ -1,13 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// The floating live-transcript pill: a borderless, non-activating panel that
-/// appears bottom-center on the screen containing the frontmost app's window,
-/// shows the recording state while dictating, and reports paste failures (its
-/// most important error job — it's already where the user is looking).
+/// The floating live-transcript indicator: a borderless, non-activating panel
+/// that appears bottom-center on the screen containing the frontmost app's
+/// window, shows the recording state while dictating, and reports paste failures
+/// (its most important error job — it's already where the user is looking).
 ///
-/// Visually it's a translucent "liquid glass" capsule: frosted vibrancy over the
-/// desktop, a bright rim, and a flowing multi-hued waveform in the violet family.
+/// Chrome-free by design: no capsule, just the violet R mark and a flowing
+/// waveform floating over the desktop with a soft shadow for legibility.
 @MainActor
 final class PillController {
     static let shared = PillController()
@@ -20,7 +20,7 @@ final class PillController {
             panel = existing
         } else {
             panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 120),
+                contentRect: NSRect(x: 0, y: 0, width: 420, height: 90),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -32,8 +32,6 @@ final class PillController {
             panel.ignoresMouseEvents = true
             panel.hidesOnDeactivate = false
             panel.isReleasedWhenClosed = false
-            // Light-committed so the frosted glass renders as light vibrancy
-            // regardless of the system appearance.
             panel.appearance = NSAppearance(named: .aqua)
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             panel.contentViewController = NSHostingController(
@@ -56,16 +54,12 @@ final class PillController {
         let size = panel.frame.size
         panel.setFrameOrigin(NSPoint(
             x: frame.midX - size.width / 2,
-            y: frame.minY + 28))
+            y: frame.minY + 24))
     }
 }
 
 struct PillView: View {
     @EnvironmentObject var state: AppState
-
-    /// Elapsed recording clock. Started/stopped as the live state flips; the
-    /// app has no dictation start-timestamp, so the pill owns it.
-    @State private var recordingStart: Date?
 
     private var isError: Bool {
         if case .error = state.dictationPhase { return true }
@@ -94,42 +88,19 @@ struct PillView: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 10) {
-                MarkGlyph(size: 19, live: isLive)
+            HStack(spacing: 8) {
+                MarkGlyph(size: 16, live: isLive)
                 content
             }
-            .padding(.leading, 11)
-            .padding(.trailing, 16)
-            .padding(.vertical, 7)
             .fixedSize(horizontal: true, vertical: true)
-            .background(glass)
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(colors: [Palette.glassRimTop, Palette.glassRimBottom],
-                                       startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.20), radius: 12, y: 6)
-            .environment(\.colorScheme, .light)
+            // No background — a soft shadow lifts the mark + wave off the desktop.
+            .shadow(color: .black.opacity(0.28), radius: 4, y: 1)
             .animation(.spring(response: 0.26, dampingFraction: 0.85), value: pillPhase)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, 2)
-        .onChange(of: isLive) { _, live in
-            recordingStart = live ? Date() : nil
-        }
+        .padding(.bottom, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-    }
-
-    /// Frosted vibrancy + a faint white wash (keeps a light body over any
-    /// desktop so the dark text and ink mark stay legible).
-    private var glass: some View {
-        ZStack {
-            Capsule(style: .continuous).fill(.ultraThinMaterial)
-            Capsule(style: .continuous).fill(Palette.glassTint)
-        }
     }
 
     @ViewBuilder private var content: some View {
@@ -138,34 +109,26 @@ struct PillView: View {
         } else if let notice = state.commandNotice {
             noticeRow(icon: "wand.and.stars", tint: Palette.mark, text: notice)
         } else if isSaved {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Palette.mark)
-                Text("Saved to notes")
-                    .font(Theme.display(12.5, .medium))
+                Text("Saved")
+                    .font(Theme.display(12, .semibold))
                     .foregroundStyle(Palette.pillText)
             }
         } else if isTranscribing {
-            HStack(spacing: 8) {
+            HStack(spacing: 7) {
                 Text("Transcribing")
-                    .font(Theme.display(12.5, .medium))
+                    .font(Theme.display(12, .semibold))
                     .foregroundStyle(Palette.pillText)
                 TranscribingDots()
             }
         } else if isLive {
-            HStack(spacing: 10) {
-                FlowWave(level: state.micLevel, live: true)
-                TimerLabel(start: recordingStart)
-            }
+            FlowWave(level: state.micLevel, live: true, width: 124, height: 20)
         } else {
-            // Ready — compact resting form with a calm flow line.
-            HStack(spacing: 10) {
-                Text("Ready")
-                    .font(Theme.display(12.5, .medium))
-                    .foregroundStyle(Palette.pillText)
-                FlowWave(level: 0, live: false, width: 84)
-            }
+            // Ready — a calm resting flow line.
+            FlowWave(level: 0, live: false, width: 68, height: 18)
         }
     }
 
@@ -173,12 +136,12 @@ struct PillView: View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .foregroundStyle(tint)
-                .font(.system(size: 11.5))
+                .font(.system(size: 11, weight: .semibold))
             Text(text)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Palette.pillText)
                 .lineLimit(2)
-                .frame(maxWidth: 275, alignment: .leading)
+                .frame(maxWidth: 250, alignment: .leading)
         }
     }
 
@@ -230,7 +193,7 @@ private struct MarkGlyph: View {
     }
 }
 
-// MARK: - Flowing waveform ("liquid glass")
+// MARK: - Flowing waveform
 
 /// A layered, flowing waveform: several translucent sine ribbons in a cool
 /// violet→teal gradient with a warm gold sparkle drifting along the crest. The
@@ -239,15 +202,13 @@ private struct MarkGlyph: View {
 struct FlowWave: View {
     let level: Float
     var live: Bool = true
-    var width: CGFloat = 190
-    var height: CGFloat = 28
+    var width: CGFloat = 124
+    var height: CGFloat = 20
 
     private var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    /// One ribbon. `amp`/`freq`/`speed`/`phase` shape the sine; `yOff` stacks it
-    /// off the midline so the ribbons weave in layers; `w`/`op` the stroke.
     private struct Ribbon {
         let color: Color
         let amp: CGFloat
@@ -259,14 +220,12 @@ struct FlowWave: View {
         let yOff: CGFloat
     }
 
-    // Broad, near-parallel ribbons at close phases so they flow together
-    // (violet lead, a teal + gold-adjacent for depth) rather than knotting.
     private let ribbons: [Ribbon] = [
-        Ribbon(color: Color(red: 0.29, green: 0.25, blue: 0.63), amp: 0.62, freq: 1.4, speed: 0.30, phase: 0.0, w: 2.6, op: 0.32, yOff: -2.5), // indigo (back)
-        Ribbon(color: Color(red: 0.42, green: 0.36, blue: 0.90), amp: 0.85, freq: 1.6, speed: 0.44, phase: 0.6, w: 2.3, op: 0.55, yOff:  1.5), // violet
-        Ribbon(color: Color(red: 0.30, green: 0.62, blue: 0.71), amp: 0.72, freq: 1.5, speed: 0.52, phase: 1.2, w: 1.9, op: 0.50, yOff: -1.0), // teal
-        Ribbon(color: Color(red: 0.56, green: 0.50, blue: 1.00), amp: 1.00, freq: 1.7, speed: 0.40, phase: 1.8, w: 2.0, op: 0.68, yOff:  2.5), // periwinkle (front)
-        Ribbon(color: Color(red: 0.73, green: 0.67, blue: 1.00), amp: 0.50, freq: 1.9, speed: 0.58, phase: 2.4, w: 1.2, op: 0.55, yOff:  0.0), // lilac highlight
+        Ribbon(color: Color(red: 0.29, green: 0.25, blue: 0.63), amp: 0.62, freq: 1.4, speed: 0.30, phase: 0.0, w: 2.2, op: 0.32, yOff: -2.2), // indigo (back)
+        Ribbon(color: Color(red: 0.42, green: 0.36, blue: 0.90), amp: 0.85, freq: 1.6, speed: 0.44, phase: 0.6, w: 2.0, op: 0.55, yOff:  1.3), // violet
+        Ribbon(color: Color(red: 0.30, green: 0.62, blue: 0.71), amp: 0.72, freq: 1.5, speed: 0.52, phase: 1.2, w: 1.7, op: 0.50, yOff: -0.9), // teal
+        Ribbon(color: Color(red: 0.56, green: 0.50, blue: 1.00), amp: 1.00, freq: 1.7, speed: 0.40, phase: 1.8, w: 1.8, op: 0.68, yOff:  2.2), // periwinkle (front)
+        Ribbon(color: Color(red: 0.73, green: 0.67, blue: 1.00), amp: 0.50, freq: 1.9, speed: 0.58, phase: 2.4, w: 1.1, op: 0.55, yOff:  0.0), // lilac highlight
     ]
 
     var body: some View {
@@ -278,22 +237,19 @@ struct FlowWave: View {
         .frame(width: width, height: height)
     }
 
-    /// 0…1 amplitude scale: calm when idle, mic-reactive when live.
     private func ampScale() -> CGFloat {
         guard live else { return 0.16 }
         let l = CGFloat(max(0.12, min(1, level)))
         return 0.34 + 0.66 * l
     }
 
-    /// Plateau envelope: full amplitude across the middle, tapering only at the
-    /// last ~16% of each end so ribbons run edge-to-edge (not center-bunched).
     private func envelope(_ x: CGFloat, _ w: CGFloat) -> CGFloat {
         let edge = w * 0.16
         let t: CGFloat
         if x < edge { t = x / edge }
         else if x > w - edge { t = (w - x) / edge }
         else { return 1 }
-        return max(0, t * t * (3 - 2 * t))          // smoothstep
+        return max(0, t * t * (3 - 2 * t))
     }
 
     private func y(_ r: Ribbon, _ x: CGFloat, _ size: CGSize, _ t: Double) -> CGFloat {
@@ -317,12 +273,10 @@ struct FlowWave: View {
     private func draw(_ ctx: GraphicsContext, _ size: CGSize, t: Double) {
         for r in ribbons {
             let path = ribbonPath(r, size, t)
-            // Gradient that fades in/out across the width, so ends dissolve.
             let grad = Gradient(colors: [r.color.opacity(0), r.color.opacity(r.op),
                                          r.color.opacity(r.op), r.color.opacity(0)])
             let shading = GraphicsContext.Shading.linearGradient(
                 grad, startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0))
-            // Soft glow pass, then the crisp ribbon.
             ctx.stroke(path, with: shading,
                        style: StrokeStyle(lineWidth: r.w * 2.1, lineCap: .round, lineJoin: .round))
             ctx.stroke(path, with: shading,
@@ -331,22 +285,19 @@ struct FlowWave: View {
         drawSparkle(ctx, size, t)
     }
 
-    /// Warm gold + white specks twinkling along the front ribbon — the shimmer.
     private func drawSparkle(_ ctx: GraphicsContext, _ size: CGSize, _ t: Double) {
         guard live else { return }
-        let carrier = ribbons[3]        // periwinkle front ribbon
+        let carrier = ribbons[3]
         let gold = Color(red: 0.86, green: 0.80, blue: 0.55)
-        let count = 54
+        let count = 44
         for k in 0..<count {
             let x = size.width * CGFloat(k) / CGFloat(count)
             let cy = y(carrier, x, size, t)
-            // Deterministic per-speck randomness (no RNG needed).
             let h = sin(Double(k) * 12.9898) * 43758.5453
             let fr = CGFloat(h - h.rounded(.down))
             let twinkle = 0.5 + 0.5 * sin(t * 3.1 + Double(k) * 1.7)
             let op = (0.12 + 0.72 * fr) * twinkle
-            let rad: CGFloat = 0.5 + 1.0 * fr
-            // Cling close to the crest so it reads as a shimmer along the wave.
+            let rad: CGFloat = 0.5 + 0.9 * fr
             let jitter = (fr - 0.5) * size.height * 0.18
             let rect = CGRect(x: x - rad, y: cy + jitter - rad, width: 2 * rad, height: 2 * rad)
             let color = (fr > 0.82 ? Color.white : gold).opacity(op * 0.9)
@@ -372,7 +323,7 @@ private struct TranscribingDots: View {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .fill(Palette.mark)
-                    .frame(width: 4.5, height: 4.5)
+                    .frame(width: 4, height: 4)
                     .opacity(opacity(i))
             }
         }
@@ -389,29 +340,5 @@ private struct TranscribingDots: View {
         case 1: return 0.55
         default: return 0.25
         }
-    }
-}
-
-// MARK: - Timer
-
-/// Mono elapsed clock (`0:14`) driven off the recording start, ticking twice a
-/// second so the seconds read live without a per-frame redraw.
-private struct TimerLabel: View {
-    let start: Date?
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.5)) { context in
-            Text(elapsed(to: context.date))
-                .font(Theme.mono(11, .medium))
-                .tracking(0.5)
-                .foregroundStyle(Palette.pillMeta)
-                .monospacedDigit()
-        }
-    }
-
-    private func elapsed(to now: Date) -> String {
-        guard let start else { return "0:00" }
-        let s = max(0, Int(now.timeIntervalSince(start)))
-        return "\(s / 60):\(String(format: "%02d", s % 60))"
     }
 }
