@@ -204,6 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         library.target = self
         menu.addItem(library)
 
+        let tasks = NSMenuItem(title: "Tasks", action: #selector(openTasks), keyEquivalent: "t")
+        tasks.target = self
+        menu.addItem(tasks)
+
         let ask = NSMenuItem(title: "Ask Radio Operator…", action: #selector(openAsk), keyEquivalent: "k")
         ask.target = self
         menu.addItem(ask)
@@ -213,11 +217,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
-
-        let onboarding = NSMenuItem(title: "Setup & Permissions…",
-                                    action: #selector(openOnboardingAction), keyEquivalent: "")
-        onboarding.target = self
-        menu.addItem(onboarding)
 
         menu.addItem(.separator())
 
@@ -394,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openLibrary() { openHub(.dictations) }
 
     @objc private func openAsk() { openHub(.ask) }
+    @objc private func openTasks() { openHub(.tasks) }
 
     @objc private func openSettings() { openHub(.dictationSettings) }
 
