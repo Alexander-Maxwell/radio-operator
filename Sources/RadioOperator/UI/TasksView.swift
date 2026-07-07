@@ -27,6 +27,10 @@ struct TasksView: View {
     @State private var newDue: TaskDuePreset?
     @State private var newPriority: TaskPriority?
     @State private var groupMode: TaskGroupMode = .meeting
+    @State private var selected: RadioTask?
+    @State private var detailSubtasks: [Subtask] = []
+    @State private var detailNotes: String?
+    @State private var newSubtask = ""
 
     private var open: [RadioTask] { tasks.filter { !$0.done } }
     private var done: [RadioTask] { tasks.filter { $0.done } }
@@ -51,6 +55,11 @@ struct TasksView: View {
 
     private func openIn(_ items: [RadioTask]) -> Int { items.filter { !$0.done }.count }
 
+    private var subtaskFraction: Double {
+        guard !detailSubtasks.isEmpty else { return 0 }
+        return Double(detailSubtasks.filter { $0.done }.count) / Double(detailSubtasks.count)
+    }
+
     private func bucket(_ t: RadioTask) -> TaskBucket { TaskBucket.of(due: t.due, now: Date()) }
     private func count(_ b: TaskBucket) -> Int { open.filter { bucket($0) == b }.count }
 
@@ -63,6 +72,7 @@ struct TasksView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.bgApp)
         .onAppear(perform: reload)
+        .overlay { detailOverlay }
     }
 
     // MARK: Header + metrics
@@ -215,6 +225,7 @@ struct TasksView: View {
                 }
             }
             .padding(.horizontal, 14).padding(.bottom, 24)
+            .animation(.easeInOut(duration: 0.18), value: tasks)
         }
     }
 
@@ -287,6 +298,8 @@ struct TasksView: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { open(task) }
             Spacer(minLength: 0)
             rowMenu(task)
         }
@@ -359,7 +372,13 @@ struct TasksView: View {
             let loaded = await Task.detached(priority: .userInitiated) {
                 TaskIndex.rebuild(notesFolder: notes, meetingsFolder: meetings)
             }.value
-            await MainActor.run { self.tasks = loaded }
+            await MainActor.run {
+                self.tasks = loaded
+                if let s = self.selected, let fresh = loaded.first(where: { $0.id == s.id }) {
+                    self.selected = fresh
+                    self.loadChildren(fresh)
+                }
+            }
         }
     }
 
@@ -373,8 +392,10 @@ struct TasksView: View {
         // background rescan is still in flight (that window made undo feel stuck).
         if let i = tasks.firstIndex(where: { $0.id == task.id && $0.sourceLine == task.sourceLine }),
            let flipped = MeetingNoteParser.togglingCheckbox(in: task.sourceLine, sourceLine: task.sourceLine) {
-            tasks[i].sourceLine = flipped
-            tasks[i].done.toggle()
+            withAnimation(.easeInOut(duration: 0.18)) {
+                tasks[i].sourceLine = flipped
+                tasks[i].done.toggle()
+            }
         }
         reload()
     }
@@ -420,6 +441,227 @@ struct TasksView: View {
         else { return }
         try? updated.write(to: task.sourceFile, atomically: true, encoding: .utf8)
         reload()
+    }
+
+    // MARK: Detail panel
+
+    @ViewBuilder private var detailOverlay: some View {
+        if let task = selected {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture { closeDetail() }
+                .transition(.opacity)
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                detailPanel(task)
+                    .frame(width: 344)
+                    .frame(maxHeight: .infinity)
+                    .background(Theme.bgSidebar)
+                    .overlay(alignment: .leading) { Rectangle().fill(Theme.hairline(0.12)).frame(width: 1) }
+                    .transition(.move(edge: .trailing))
+            }
+        }
+    }
+
+    private func detailPanel(_ task: RadioTask) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Button { closeDetail() } label: {
+                        Image(systemName: "xmark").font(.system(size: 12)).foregroundStyle(Theme.textDim)
+                    }.buttonStyle(.plain)
+                    Spacer()
+                    if isMeeting(task) {
+                        Button { openSource(task); closeDetail() } label: {
+                            Image(systemName: "arrow.up.forward.square").font(.system(size: 13)).foregroundStyle(Theme.textDim)
+                        }.buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
+
+                HStack(alignment: .top, spacing: 11) {
+                    Button { toggle(task) } label: {
+                        Image(systemName: task.done ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 18)).foregroundStyle(task.done ? Theme.green : Theme.textFaint)
+                    }.buttonStyle(.plain)
+                    Text(task.text)
+                        .font(Theme.display(16, .medium))
+                        .foregroundStyle(task.done ? Theme.textMeta : Theme.textMax)
+                        .strikethrough(task.done, color: Theme.textMeta)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14).padding(.bottom, 12)
+
+                fieldRow("Status", "circle.dashed") { statusPill(task) }
+                fieldRow("Due date", "calendar") { dueField(task) }
+                fieldRow("Priority", "flag") { priorityField(task) }
+                if let project = task.project { fieldRow("Project", "tag") { tagPill(project) } }
+                fieldRow("From", "mic") { sourceChip(task) }
+
+                subtasksSection(task)
+
+                if let notes = detailNotes {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "note.text").font(.system(size: 12))
+                            Text("Notes").font(Theme.display(12.5))
+                        }
+                        .foregroundStyle(Theme.textDim)
+                        Text(notes).font(Theme.display(13)).foregroundStyle(Theme.textBody)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(14)
+                    .overlay(alignment: .top) { Rectangle().fill(Theme.hairline(0.06)).frame(height: 1) }
+                }
+            }
+        }
+    }
+
+    private func fieldRow<V: View>(_ label: String, _ icon: String, @ViewBuilder value: () -> V) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 12))
+                Text(label).font(Theme.display(12.5))
+            }
+            .foregroundStyle(Theme.textDim)
+            .frame(width: 96, alignment: .leading)
+            value()
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline(0.06)).frame(height: 1) }
+    }
+
+    private func statusPill(_ task: RadioTask) -> some View {
+        Button { toggle(task) } label: {
+            Text(task.done ? "Done" : "Open")
+                .font(Theme.mono(10.5))
+                .foregroundStyle(task.done ? Theme.green : Theme.textDim)
+                .padding(.horizontal, 9).padding(.vertical, 2)
+                .background(Capsule().fill((task.done ? Theme.green : Theme.textDim).opacity(0.14)))
+        }.buttonStyle(.plain)
+    }
+
+    private func dueField(_ task: RadioTask) -> some View {
+        Menu {
+            ForEach(TaskDuePreset.allCases, id: \.self) { p in
+                Button(p.label) { applyEdit(task) { $0.due = TaskIndex.parseDueDate(p.iso(now: Date())) } }
+            }
+            if task.due != nil { Button("Clear") { applyEdit(task) { $0.due = nil } } }
+        } label: {
+            if let due = task.due { dueChip(due) } else { addValueLabel("Add date") }
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    }
+
+    private func priorityField(_ task: RadioTask) -> some View {
+        Menu {
+            Button("High") { applyEdit(task) { $0.priority = .high } }
+            Button("Medium") { applyEdit(task) { $0.priority = .medium } }
+            Button("Low") { applyEdit(task) { $0.priority = .low } }
+            if task.priority != nil { Button("Clear") { applyEdit(task) { $0.priority = nil } } }
+        } label: {
+            if let p = task.priority { priorityChip(p) } else { addValueLabel("Add") }
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    }
+
+    private func addValueLabel(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "plus").font(.system(size: 9))
+            Text(text)
+        }
+        .font(Theme.display(12)).foregroundStyle(Theme.textMeta)
+    }
+
+    private func subtasksSection(_ task: RadioTask) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "checklist").font(.system(size: 12))
+                    Text("Subtasks").font(Theme.display(12.5))
+                }
+                .foregroundStyle(Theme.textDim)
+                Spacer()
+                if !detailSubtasks.isEmpty {
+                    Text("\(detailSubtasks.filter { $0.done }.count) / \(detailSubtasks.count)")
+                        .font(Theme.mono(11)).foregroundStyle(Theme.textMeta)
+                }
+            }
+            if !detailSubtasks.isEmpty {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.06))
+                        Capsule().fill(Theme.green).frame(width: geo.size.width * subtaskFraction)
+                    }
+                }
+                .frame(height: 5)
+            }
+            ForEach(detailSubtasks, id: \.sourceLine) { sub in
+                Button { toggleSubtask(sub, in: task) } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: sub.done ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 14)).foregroundStyle(sub.done ? Theme.green : Theme.textFaint)
+                        Text(sub.text).font(Theme.display(13))
+                            .foregroundStyle(sub.done ? Theme.textMeta : Theme.textBody)
+                            .strikethrough(sub.done, color: Theme.textMeta)
+                        Spacer(minLength: 0)
+                    }
+                }.buttonStyle(.plain)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "plus").font(.system(size: 11)).foregroundStyle(Theme.textFaint)
+                TextField("Add subtask", text: $newSubtask)
+                    .textFieldStyle(.plain).font(Theme.display(13)).foregroundStyle(Theme.textHi)
+                    .onSubmit { addSubtask(to: task) }
+            }
+            .padding(.top, 2)
+        }
+        .padding(14)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline(0.06)).frame(height: 1) }
+    }
+
+    private func isMeeting(_ t: RadioTask) -> Bool {
+        if case .meeting = t.source { return true }
+        return false
+    }
+
+    private func open(_ task: RadioTask) {
+        loadChildren(task)
+        newSubtask = ""
+        withAnimation(.easeOut(duration: 0.22)) { selected = task }
+    }
+
+    private func closeDetail() {
+        withAnimation(.easeOut(duration: 0.2)) { selected = nil }
+    }
+
+    private func loadChildren(_ task: RadioTask) {
+        guard let content = try? String(contentsOf: task.sourceFile, encoding: .utf8) else {
+            detailSubtasks = []; detailNotes = nil; return
+        }
+        let c = TaskDetail.children(in: content, parentLine: task.sourceLine)
+        detailSubtasks = c.subtasks
+        detailNotes = c.notes
+    }
+
+    private func toggleSubtask(_ sub: Subtask, in task: RadioTask) {
+        guard let content = try? String(contentsOf: task.sourceFile, encoding: .utf8),
+              let updated = MeetingNoteParser.togglingCheckbox(in: content, sourceLine: sub.sourceLine)
+        else { return }
+        try? updated.write(to: task.sourceFile, atomically: true, encoding: .utf8)
+        withAnimation(.easeInOut(duration: 0.18)) { loadChildren(task) }
+    }
+
+    private func addSubtask(to task: RadioTask) {
+        let text = newSubtask.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty,
+              let content = try? String(contentsOf: task.sourceFile, encoding: .utf8),
+              let updated = TaskDetail.addingSubtask(text, to: content, parentLine: task.sourceLine)
+        else { return }
+        try? updated.write(to: task.sourceFile, atomically: true, encoding: .utf8)
+        newSubtask = ""
+        withAnimation(.easeInOut(duration: 0.18)) { loadChildren(task) }
     }
 
     // MARK: Sort / color
