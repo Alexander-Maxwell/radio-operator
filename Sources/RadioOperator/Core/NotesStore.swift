@@ -17,10 +17,42 @@ final class NotesStore {
         return url
     }
 
-    var audioFolder: URL {
-        let url = SettingsStore.shared.notesFolderURL.appendingPathComponent("Audio", isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+    /// Retained meeting audio lives in its own configurable archive folder,
+    /// separate from the notes vault (recordings are bulky and don't belong in
+    /// a synced knowledge base). Legacy audio at `<notesFolder>/Audio` is drained
+    /// into here once at launch via `relocateAudioFiles`.
+    var audioFolder: URL { SettingsStore.shared.audioFolderURL }
+
+    /// The pre-0.4.1 audio location (`<notesFolder>/Audio`), drained by the
+    /// one-time launch migration.
+    var legacyAudioFolder: URL {
+        SettingsStore.shared.notesFolderURL.appendingPathComponent("Audio", isDirectory: true)
+    }
+
+    /// Moves every `.m4a` from `from` to `to` (collision-safe: an existing name
+    /// at the destination gets a numeric suffix). Returns the count moved.
+    /// Pure file I/O, no app state — safe to call off the MainActor and unit-test.
+    @discardableResult
+    nonisolated static func relocateAudioFiles(from: URL, to: URL) -> Int {
+        let fm = FileManager.default
+        guard from.standardizedFileURL != to.standardizedFileURL,
+              let files = try? fm.contentsOfDirectory(at: from, includingPropertiesForKeys: nil)
+        else { return 0 }
+        let m4as = files.filter { $0.pathExtension.lowercased() == "m4a" }
+        guard !m4as.isEmpty else { return 0 }
+        try? fm.createDirectory(at: to, withIntermediateDirectories: true)
+        var moved = 0
+        for src in m4as {
+            let stem = src.deletingPathExtension().lastPathComponent
+            var dst = to.appendingPathComponent("\(stem).m4a")
+            var n = 2
+            while fm.fileExists(atPath: dst.path) {
+                dst = to.appendingPathComponent("\(stem) \(n).m4a")
+                n += 1
+            }
+            do { try fm.moveItem(at: src, to: dst); moved += 1 } catch { continue }
+        }
+        return moved
     }
 
     var dictationsFolder: URL {

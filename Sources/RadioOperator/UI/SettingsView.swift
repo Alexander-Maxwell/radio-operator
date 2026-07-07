@@ -420,6 +420,7 @@ private func emptyHint(_ s: String) -> some View {
 
 struct MeetingsPane: View {
     @EnvironmentObject var settings: SettingsStore
+    @State private var audioMoveStatus: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -441,6 +442,32 @@ struct MeetingsPane: View {
                     .buttonStyle(DimButtonStyle())
                 }
                 .padding(14)
+            }
+
+            Card(title: "Recordings folder", hint: "kept out of the notes vault") {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        Text(settings.data.audioFolderPath)
+                            .font(Theme.mono(12))
+                            .foregroundStyle(Theme.textBody)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Button("Change…", action: chooseAudioFolder)
+                            .buttonStyle(DimButtonStyle())
+                        Button("Reveal") {
+                            NSWorkspace.shared.open(settings.audioFolderURL)
+                        }
+                        .buttonStyle(DimButtonStyle())
+                    }
+                    .padding(14)
+                    if let audioMoveStatus {
+                        cardDivider()
+                        Text(audioMoveStatus)
+                            .font(Theme.display(11.5))
+                            .foregroundStyle(Theme.textFaint)
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                    }
+                }
             }
 
             Card(title: "Capture") {
@@ -482,7 +509,7 @@ struct MeetingsPane: View {
                     }
                     cardDivider()
                     SettingRow(title: "Keep meeting audio",
-                               desc: "Off by default. When on, the .m4a stays local next to the note.") {
+                               desc: "Off by default. When on, both tracks (.m4a) are saved to the Recordings folder above — local, and separate from your notes.") {
                         Toggle("", isOn: $settings.data.retainAudio).labelsHidden()
                     }
                 }
@@ -503,6 +530,31 @@ struct MeetingsPane: View {
         panel.allowsMultipleSelection = false
         panel.directoryURL = URL(fileURLWithPath: settings.data.notesFolderPath, isDirectory: true)
         if panel.runModal() == .OK, let url = panel.url { settings.data.notesFolderPath = url.path }
+    }
+
+    /// Pick a new recordings archive, then move existing .m4a there so old
+    /// meetings' audio still plays and nothing is orphaned.
+    private func chooseAudioFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose where meeting recordings are stored."
+        panel.directoryURL = settings.audioFolderURL
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        let old = settings.audioFolderURL
+        guard dest.standardizedFileURL != old.standardizedFileURL else { return }
+        settings.data.audioFolderPath = dest.path
+        audioMoveStatus = "Moving existing recordings…"
+        Task.detached(priority: .userInitiated) {
+            let moved = NotesStore.relocateAudioFiles(from: old, to: dest)
+            await MainActor.run {
+                audioMoveStatus = moved == 0
+                    ? "New recordings will be saved here."
+                    : "Moved \(moved) recording file\(moved == 1 ? "" : "s") here."
+            }
+        }
     }
 }
 

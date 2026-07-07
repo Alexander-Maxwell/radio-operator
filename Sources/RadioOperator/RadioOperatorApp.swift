@@ -69,6 +69,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DictationController.shared.startListening()
         CommandController.shared.startListening()
 
+        // One-time: drain any recordings left in the pre-0.4.1 <notes>/Audio
+        // folder into the dedicated archive folder. URLs resolve on-main; the
+        // blocking move runs off it. Idempotent and collision-safe.
+        let legacyAudio = NotesStore.shared.legacyAudioFolder
+        let archiveAudio = NotesStore.shared.audioFolder
+        Task.detached(priority: .utility) {
+            NotesStore.relocateAudioFiles(from: legacyAudio, to: archiveAudio)
+        }
+
         // Route capture to the user's chosen microphone (nil = system default).
         MicCapture.shared.preferredDeviceUID = SettingsStore.shared.data.micDeviceUID
 

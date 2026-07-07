@@ -153,6 +153,32 @@ enum NotesStoreTestCases {
             t.expect(out.contains("\n# Budget Sync"), "H1 swapped")
             t.expect(!out.contains("Meeting in progress"), "old title gone")
         }
+        t.test("relocateAudioFiles moves m4a, skips others, is collision-safe") { t in
+            let fm = FileManager.default
+            let root = fm.temporaryDirectory.appendingPathComponent("ro-audio-\(UUID().uuidString)")
+            let from = root.appendingPathComponent("from")
+            let to = root.appendingPathComponent("to")
+            try? fm.createDirectory(at: from, withIntermediateDirectories: true)
+            try? fm.createDirectory(at: to, withIntermediateDirectories: true)
+            defer { try? fm.removeItem(at: root) }
+            // Two recordings + a non-audio file that must stay put.
+            try? "a".write(to: from.appendingPathComponent("m1 - me.m4a"), atomically: true, encoding: .utf8)
+            try? "b".write(to: from.appendingPathComponent("m1 - them.m4a"), atomically: true, encoding: .utf8)
+            try? "x".write(to: from.appendingPathComponent("note.md"), atomically: true, encoding: .utf8)
+            // A name collision already at the destination.
+            try? "old".write(to: to.appendingPathComponent("m1 - me.m4a"), atomically: true, encoding: .utf8)
+
+            let moved = NotesStore.relocateAudioFiles(from: from, to: to)
+            t.expectEqual(moved, 2, "moved both .m4a")
+            t.expect(fm.fileExists(atPath: from.appendingPathComponent("note.md").path), "non-audio left behind")
+            t.expect(!fm.fileExists(atPath: from.appendingPathComponent("m1 - them.m4a").path), "source drained")
+            t.expect(fm.fileExists(atPath: to.appendingPathComponent("m1 - me.m4a").path), "original dest kept")
+            t.expect(fm.fileExists(atPath: to.appendingPathComponent("m1 - me 2.m4a").path), "collision suffixed")
+            t.expect(fm.fileExists(atPath: to.appendingPathComponent("m1 - them.m4a").path), "second track moved")
+            // Same-dir and empty-source are no-ops.
+            t.expectEqual(NotesStore.relocateAudioFiles(from: to, to: to), 0, "same dir no-op")
+            t.expectEqual(NotesStore.relocateAudioFiles(from: from, to: to), 0, "drained source no-op")
+        }
         t.test("retitled filename keeps stamp") { t in
             t.expectEqual(
                 NotesStore.retitledFilename(currentStem: "2026-07-02-0930 Meeting in progress",

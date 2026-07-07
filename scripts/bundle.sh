@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.4.0"
+VERSION="0.4.1"
 swift build -c release
 
 APP="build/Radio Operator.app"

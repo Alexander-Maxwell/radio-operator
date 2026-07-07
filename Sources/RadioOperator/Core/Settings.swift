@@ -187,6 +187,11 @@ struct SettingsData: Codable, Sendable {
     var dictionary: [DictionaryEntry] = []
     var snippets: [Snippet] = []
     var notesFolderPath: String = SettingsData.defaultNotesFolder
+    /// Where retained meeting audio (.m4a) is written. Decoupled from the notes
+    /// folder on purpose: notes are small knowledge that can live in a synced
+    /// vault, recordings are bulky archival files that belong in a dedicated
+    /// records location. Defaults outside any notes vault.
+    var audioFolderPath: String = SettingsData.defaultAudioFolder
     var retainAudio: Bool = false
     var claudeMode: ClaudeMode = .cli
     var claudeCLIModel: String = "sonnet"
@@ -256,6 +261,14 @@ struct SettingsData: Codable, Sendable {
     static var defaultNotesFolder: String {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents/Radio Operator").path
+    }
+
+    /// Meeting recordings default to a dedicated Documents/Recordings folder —
+    /// out of any notes vault, Finder-friendly, and local (never auto-synced to
+    /// a cloud, so confidential meeting audio stays on this Mac by default).
+    static var defaultAudioFolder: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Documents/Radio Operator/Recordings").path
     }
 
     /// The output spec Claude fills in for a meeting. Editable in Settings;
@@ -328,6 +341,7 @@ struct SettingsData: Codable, Sendable {
     // survive schema evolution across versions.
     enum CodingKeys: String, CodingKey {
         case holdHotkey, cleanupLevel, dictionary, snippets, notesFolderPath
+        case audioFolderPath
         case retainAudio, claudeMode, claudeCLIModel, apiModel
         case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
@@ -351,6 +365,7 @@ struct SettingsData: Codable, Sendable {
         dictionary = (try? c.decodeIfPresent([DictionaryEntry].self, forKey: .dictionary)) ?? d.dictionary
         snippets = (try? c.decodeIfPresent([Snippet].self, forKey: .snippets)) ?? d.snippets
         notesFolderPath = (try? c.decodeIfPresent(String.self, forKey: .notesFolderPath)) ?? d.notesFolderPath
+        audioFolderPath = (try? c.decodeIfPresent(String.self, forKey: .audioFolderPath)) ?? d.audioFolderPath
         retainAudio = (try? c.decodeIfPresent(Bool.self, forKey: .retainAudio)) ?? d.retainAudio
         claudeMode = (try? c.decodeIfPresent(ClaudeMode.self, forKey: .claudeMode)) ?? d.claudeMode
         claudeCLIModel = (try? c.decodeIfPresent(String.self, forKey: .claudeCLIModel)) ?? d.claudeCLIModel
@@ -420,6 +435,17 @@ final class SettingsStore: ObservableObject {
 
     var notesFolderURL: URL {
         let url = URL(fileURLWithPath: data.notesFolderPath, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// Where retained meeting recordings are written — independent of the notes
+    /// folder. Created lazily so an empty setting or a not-yet-existing archive
+    /// dir just works on first record.
+    var audioFolderURL: URL {
+        let path = data.audioFolderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = URL(fileURLWithPath: path.isEmpty ? SettingsData.defaultAudioFolder : path,
+                      isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
