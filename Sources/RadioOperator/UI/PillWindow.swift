@@ -5,6 +5,9 @@ import SwiftUI
 /// appears bottom-center on the screen containing the frontmost app's window,
 /// shows the recording state while dictating, and reports paste failures (its
 /// most important error job — it's already where the user is looking).
+///
+/// Visually it's a translucent "liquid glass" capsule: frosted vibrancy over the
+/// desktop, a bright rim, and a flowing multi-hued waveform in the violet family.
 @MainActor
 final class PillController {
     static let shared = PillController()
@@ -17,7 +20,7 @@ final class PillController {
             panel = existing
         } else {
             panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 110),
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 120),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -29,6 +32,9 @@ final class PillController {
             panel.ignoresMouseEvents = true
             panel.hidesOnDeactivate = false
             panel.isReleasedWhenClosed = false
+            // Light-committed so the frosted glass renders as light vibrancy
+            // regardless of the system appearance.
+            panel.appearance = NSAppearance(named: .aqua)
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             panel.contentViewController = NSHostingController(
                 rootView: PillView().environmentObject(AppState.shared))
@@ -43,8 +49,6 @@ final class PillController {
     }
 
     private func position(_ panel: NSPanel) {
-        // Screen of the frontmost app's key window ≈ screen with mouse focus;
-        // fall back to main.
         let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) })
             ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else { return }
@@ -71,13 +75,10 @@ struct PillView: View {
         if case .error(let m) = state.dictationPhase { return m }
         return ""
     }
-    /// Fully-live capture: dictation or Command Mode hearing the instruction.
     private var isLive: Bool {
         if case .recording = state.dictationPhase { return true }
         return state.commandPhase == .recording
     }
-    /// Text is being transcribed / transformed (dictation finalizing, or any
-    /// mid-flight Command Mode stage before the paste).
     private var isTranscribing: Bool {
         if case .finalizing = state.dictationPhase { return true }
         switch state.commandPhase {
@@ -85,7 +86,6 @@ struct PillView: View {
         default: return false
         }
     }
-    /// The insert moment — mapped to the handoff "Saved to notes" state.
     private var isSaved: Bool {
         if case .pasting = state.dictationPhase { return true }
         return state.commandPhase == .pasting
@@ -94,21 +94,24 @@ struct PillView: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 9) {
-                mark
+            HStack(spacing: 10) {
+                MarkGlyph(size: 19, live: isLive)
                 content
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 14)
-            .padding(.vertical, 6)
+            .padding(.leading, 11)
+            .padding(.trailing, 16)
+            .padding(.vertical, 7)
             .fixedSize(horizontal: true, vertical: true)
-            .background(Capsule(style: .continuous).fill(Palette.pillBG))
+            .background(glass)
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(isLive ? Palette.pillBorder : Palette.pillBorderIdle,
-                                  lineWidth: 0.75)
+                    .strokeBorder(
+                        LinearGradient(colors: [Palette.glassRimTop, Palette.glassRimBottom],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.34), radius: 8, y: 4)
+            .shadow(color: .black.opacity(0.20), radius: 12, y: 6)
+            .environment(\.colorScheme, .light)
             .animation(.spring(response: 0.26, dampingFraction: 0.85), value: pillPhase)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -120,13 +123,14 @@ struct PillView: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    // MARK: Left mark (always present) — violet R-in-O, with a listening pulse.
-
-    private var mark: some View {
-        MarkGlyph(size: 19, live: isLive)
+    /// Frosted vibrancy + a faint white wash (keeps a light body over any
+    /// desktop so the dark text and ink mark stay legible).
+    private var glass: some View {
+        ZStack {
+            Capsule(style: .continuous).fill(.ultraThinMaterial)
+            Capsule(style: .continuous).fill(Palette.glassTint)
+        }
     }
-
-    // MARK: State-dependent trailing content
 
     @ViewBuilder private var content: some View {
         if isError {
@@ -150,17 +154,17 @@ struct PillView: View {
                 TranscribingDots()
             }
         } else if isLive {
-            HStack(spacing: 9) {
-                RoMeter(level: state.micLevel, live: true)
+            HStack(spacing: 10) {
+                FlowWave(level: state.micLevel, live: true)
                 TimerLabel(start: recordingStart)
             }
         } else {
-            // Ready — compact resting form.
-            HStack(spacing: 8) {
+            // Ready — compact resting form with a calm flow line.
+            HStack(spacing: 10) {
                 Text("Ready")
                     .font(Theme.display(12.5, .medium))
                     .foregroundStyle(Palette.pillText)
-                RoMeter(level: 0, live: false)
+                FlowWave(level: 0, live: false, width: 84)
             }
         }
     }
@@ -178,7 +182,6 @@ struct PillView: View {
         }
     }
 
-    /// A coarse key so width/opacity changes spring between distinct states.
     private var pillPhase: Int {
         if isError { return 0 }
         if state.commandNotice != nil { return 1 }
@@ -227,53 +230,135 @@ private struct MarkGlyph: View {
     }
 }
 
-// MARK: - Meter
+// MARK: - Flowing waveform ("liquid glass")
 
-/// The recording meter: a row of thin, center-weighted vertical bars that scale
-/// with the live input level. Violet while recording, faint and flat when idle.
-/// Static under Reduce Motion.
-struct RoMeter: View {
+/// A layered, flowing waveform: several translucent sine ribbons in a cool
+/// violet→teal gradient with a warm gold sparkle drifting along the crest. The
+/// amplitude tracks the live mic level; the ribbons drift over time. Calm and
+/// static when idle or under Reduce Motion.
+struct FlowWave: View {
     let level: Float
     var live: Bool = true
-    var barCount: Int = 11
-    var maxHeight: CGFloat = 22
+    var width: CGFloat = 190
+    var height: CGFloat = 28
 
     private var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    // Center-weighted envelope: tall in the middle, short tails. Gentle texture
-    // so the row reads clean, not jagged.
-    private func envelope(_ i: Int) -> CGFloat {
-        let x = Double(i) / Double(max(1, barCount - 1))    // 0…1
-        let bell = sin(.pi * x)                              // 0 at ends, 1 center
-        let texture = 0.84 + 0.16 * sin(x * 17)
-        return CGFloat(bell * bell * texture)
+    /// One ribbon. `amp`/`freq`/`speed`/`phase` shape the sine; `yOff` stacks it
+    /// off the midline so the ribbons weave in layers; `w`/`op` the stroke.
+    private struct Ribbon {
+        let color: Color
+        let amp: CGFloat
+        let freq: CGFloat
+        let speed: Double
+        let phase: CGFloat
+        let w: CGFloat
+        let op: CGFloat
+        let yOff: CGFloat
     }
 
-    private func barHeight(_ i: Int) -> CGFloat {
-        guard live else { return 3 }                        // idle: flat 3px
-        let lvl = CGFloat(max(0.16, min(1, level)))
-        return 4 + envelope(i) * (maxHeight - 4) * lvl
-    }
+    // Broad, near-parallel ribbons at close phases so they flow together
+    // (violet lead, a teal + gold-adjacent for depth) rather than knotting.
+    private let ribbons: [Ribbon] = [
+        Ribbon(color: Color(red: 0.29, green: 0.25, blue: 0.63), amp: 0.62, freq: 1.4, speed: 0.30, phase: 0.0, w: 2.6, op: 0.32, yOff: -2.5), // indigo (back)
+        Ribbon(color: Color(red: 0.42, green: 0.36, blue: 0.90), amp: 0.85, freq: 1.6, speed: 0.44, phase: 0.6, w: 2.3, op: 0.55, yOff:  1.5), // violet
+        Ribbon(color: Color(red: 0.30, green: 0.62, blue: 0.71), amp: 0.72, freq: 1.5, speed: 0.52, phase: 1.2, w: 1.9, op: 0.50, yOff: -1.0), // teal
+        Ribbon(color: Color(red: 0.56, green: 0.50, blue: 1.00), amp: 1.00, freq: 1.7, speed: 0.40, phase: 1.8, w: 2.0, op: 0.68, yOff:  2.5), // periwinkle (front)
+        Ribbon(color: Color(red: 0.73, green: 0.67, blue: 1.00), amp: 0.50, freq: 1.9, speed: 0.58, phase: 2.4, w: 1.2, op: 0.55, yOff:  0.0), // lilac highlight
+    ]
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1.25, style: .continuous)
-                    .fill(live ? Palette.mark : Palette.meterIdle)
-                    .frame(width: 2.5, height: barHeight(i))
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.11), value: level)
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || !live)) { tl in
+            Canvas { ctx, size in
+                draw(ctx, size, t: tl.date.timeIntervalSinceReferenceDate)
             }
         }
-        .frame(height: maxHeight, alignment: .center)
+        .frame(width: width, height: height)
+    }
+
+    /// 0…1 amplitude scale: calm when idle, mic-reactive when live.
+    private func ampScale() -> CGFloat {
+        guard live else { return 0.16 }
+        let l = CGFloat(max(0.12, min(1, level)))
+        return 0.34 + 0.66 * l
+    }
+
+    /// Plateau envelope: full amplitude across the middle, tapering only at the
+    /// last ~16% of each end so ribbons run edge-to-edge (not center-bunched).
+    private func envelope(_ x: CGFloat, _ w: CGFloat) -> CGFloat {
+        let edge = w * 0.16
+        let t: CGFloat
+        if x < edge { t = x / edge }
+        else if x > w - edge { t = (w - x) / edge }
+        else { return 1 }
+        return max(0, t * t * (3 - 2 * t))          // smoothstep
+    }
+
+    private func y(_ r: Ribbon, _ x: CGFloat, _ size: CGSize, _ t: Double) -> CGFloat {
+        let midY = size.height / 2 + r.yOff * ampScale()
+        let a = ampScale() * r.amp * (size.height * 0.40)
+        let ph = CGFloat(t * r.speed) + r.phase
+        return midY + a * envelope(x, size.width) * sin(r.freq * 2 * .pi * x / size.width + ph)
+    }
+
+    private func ribbonPath(_ r: Ribbon, _ size: CGSize, _ t: Double) -> Path {
+        var p = Path()
+        let steps = 72
+        for i in 0...steps {
+            let x = size.width * CGFloat(i) / CGFloat(steps)
+            let pt = CGPoint(x: x, y: y(r, x, size, t))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        return p
+    }
+
+    private func draw(_ ctx: GraphicsContext, _ size: CGSize, t: Double) {
+        for r in ribbons {
+            let path = ribbonPath(r, size, t)
+            // Gradient that fades in/out across the width, so ends dissolve.
+            let grad = Gradient(colors: [r.color.opacity(0), r.color.opacity(r.op),
+                                         r.color.opacity(r.op), r.color.opacity(0)])
+            let shading = GraphicsContext.Shading.linearGradient(
+                grad, startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0))
+            // Soft glow pass, then the crisp ribbon.
+            ctx.stroke(path, with: shading,
+                       style: StrokeStyle(lineWidth: r.w * 2.1, lineCap: .round, lineJoin: .round))
+            ctx.stroke(path, with: shading,
+                       style: StrokeStyle(lineWidth: r.w, lineCap: .round, lineJoin: .round))
+        }
+        drawSparkle(ctx, size, t)
+    }
+
+    /// Warm gold + white specks twinkling along the front ribbon — the shimmer.
+    private func drawSparkle(_ ctx: GraphicsContext, _ size: CGSize, _ t: Double) {
+        guard live else { return }
+        let carrier = ribbons[3]        // periwinkle front ribbon
+        let gold = Color(red: 0.86, green: 0.80, blue: 0.55)
+        let count = 54
+        for k in 0..<count {
+            let x = size.width * CGFloat(k) / CGFloat(count)
+            let cy = y(carrier, x, size, t)
+            // Deterministic per-speck randomness (no RNG needed).
+            let h = sin(Double(k) * 12.9898) * 43758.5453
+            let fr = CGFloat(h - h.rounded(.down))
+            let twinkle = 0.5 + 0.5 * sin(t * 3.1 + Double(k) * 1.7)
+            let op = (0.12 + 0.72 * fr) * twinkle
+            let rad: CGFloat = 0.5 + 1.0 * fr
+            // Cling close to the crest so it reads as a shimmer along the wave.
+            let jitter = (fr - 0.5) * size.height * 0.18
+            let rect = CGRect(x: x - rad, y: cy + jitter - rad, width: 2 * rad, height: 2 * rad)
+            let color = (fr > 0.82 ? Color.white : gold).opacity(op * 0.9)
+            ctx.fill(Path(ellipseIn: rect), with: .color(color))
+        }
     }
 }
 
 // MARK: - Transcribing dots
 
-/// Three dots at 100/55/25% opacity that pulse in sequence — the "working"
-/// affordance while text is being transcribed or transformed.
+/// Three dots that pulse in sequence — the "working" affordance while text is
+/// being transcribed or transformed.
 private struct TranscribingDots: View {
     @State private var phase = 0
 
@@ -299,7 +384,6 @@ private struct TranscribingDots: View {
 
     private func opacity(_ i: Int) -> Double {
         if reduceMotion { return [1.0, 0.55, 0.25][i] }
-        // The lit dot travels; the two behind it trail off.
         switch (i - phase + 3) % 3 {
         case 0: return 1.0
         case 1: return 0.55

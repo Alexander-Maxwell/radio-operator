@@ -84,12 +84,16 @@ enum PreviewExporter {
         for c in cases {
             c.apply()
             // The pill floats bottom-center in a transparent panel; frame it over
-            // a neutral desktop backdrop so the dark capsule is visible.
+            // a warm desktop-like gradient so the frosted glass has something to
+            // sample (ImageRenderer only approximates real behind-window blur).
             let content = ZStack {
-                Color(white: 0.82)
+                LinearGradient(colors: [Color(red: 0.82, green: 0.79, blue: 0.74),
+                                        Color(red: 0.68, green: 0.70, blue: 0.72),
+                                        Color(red: 0.55, green: 0.58, blue: 0.62)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
                 PillView().environmentObject(state)
             }
-            .frame(width: 520, height: 140)
+            .frame(width: 540, height: 150)
 
             let renderer = ImageRenderer(content: content)
             renderer.scale = 2
