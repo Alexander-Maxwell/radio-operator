@@ -227,9 +227,6 @@ private struct HubSidebar: View {
                 Text("Settings")
                     .font(Theme.display(13.5, .medium))
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.textMono)
             }
             .foregroundStyle(Theme.sidebarIdle)
             .padding(.horizontal, 12).padding(.vertical, 8)
