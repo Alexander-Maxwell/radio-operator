@@ -58,7 +58,24 @@ enum HubSection: CaseIterable {
 final class HubState: ObservableObject {
     static let shared = HubState()
     @Published var section: HubSection = .dictations
+    /// Deep link: a meeting note filename to open in detail the next time the
+    /// Meetings screen appears (set by Ask citations; cleared by MeetingsView).
+    @Published var pendingMeetingID: String?
     private init() {}
+}
+
+/// Opens (or navigates) the hub window. The one place hub window construction
+/// lives, so menu items, the recording HUD, and deep links all agree.
+@MainActor
+enum HubWindow {
+    static func open(_ section: HubSection) {
+        HubState.shared.section = section
+        WindowRouter.shared.show(id: "hub", title: "Radio Operator",
+                                 size: NSSize(width: 1120, height: 700),
+                                 darkChrome: true) {
+            HubView().environmentObject(SettingsStore.shared)
+        }
+    }
 }
 
 // MARK: - Live permission / connection health

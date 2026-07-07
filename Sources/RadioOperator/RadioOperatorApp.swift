@@ -367,12 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// menu item just selects which section it lands on (an already-open hub
     /// navigates live).
     private func openHub(_ section: HubSection) {
-        HubState.shared.section = section
-        WindowRouter.shared.show(id: "hub", title: "Radio Operator",
-                                 size: NSSize(width: 1120, height: 700),
-                                 darkChrome: true) {
-            HubView().environmentObject(SettingsStore.shared)
-        }
+        HubWindow.open(section)
     }
 
     private func openOnboarding() {
