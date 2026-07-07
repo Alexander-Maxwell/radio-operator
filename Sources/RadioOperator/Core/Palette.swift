@@ -1,17 +1,31 @@
 import SwiftUI
+import AppKit
 
-/// Tactical palette, keyed off the Radio Operator emblem: black field, weathered
-/// khaki/brass, bone, and the transceiver's amber LCD. Red stays reserved for a
-/// live microphone.
+/// Tokens for the recording pill — the one surface that stays dark in the
+/// otherwise-light Violet "Enclosed" identity. Near-black capsule, violet mark
+/// and meter (brightened for contrast on the dark field), white-alpha labels.
+/// Values are the `--ro-pill-*` / `--ro-primary-bright` tokens from
+/// `design_handoff_ro_identity/README.md`.
 enum Palette {
-    /// Weathered brass — the "RADIO OPERATOR" lettering, lightning, towers.
-    static let accent = Color(red: 0.706, green: 0.639, blue: 0.455)   // #B4A374
-    /// Skull bone — bright detail on dark.
-    static let bone = Color(red: 0.812, green: 0.780, blue: 0.694)     // #CFC7B2
-    /// Transceiver LCD amber — "on air / signal present".
-    static let lcd = Color(red: 0.792, green: 0.635, blue: 0.290)      // #CAA24A
-    /// Live microphone — recording/transmit.
-    static let live = Color(red: 0.710, green: 0.251, blue: 0.220)     // #B54038
-    /// OD green — the hold-to-dictate mic-level signal (the pill you see while speaking).
-    static let od = Color(red: 0.435, green: 0.514, blue: 0.267)       // #6F8344
+    /// Pill background: near-black, warm-neutral (--ro-pill-bg #17181B).
+    static let pillBG = Color(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1B / 255)
+    /// Pill border while recording (--ro-pill-border, violet at 0.40).
+    static let pillBorder = Color(red: 143 / 255, green: 127 / 255, blue: 255 / 255).opacity(0.40)
+    /// Pill border at rest (subtle white hairline).
+    static let pillBorderIdle = Color.white.opacity(0.08)
+    /// Pill labels — Ready / Transcribing / Saved (--ro-pill-text).
+    static let pillText = Color.white.opacity(0.82)
+    /// Pill timer, mono (--ro-pill-meta).
+    static let pillMeta = Color.white.opacity(0.55)
+
+    /// Mark + live meter on the pill: violet, brighter for contrast on the
+    /// near-black field (--ro-primary-bright #8F7FFF).
+    static let mark = Color(red: 143 / 255, green: 127 / 255, blue: 255 / 255)
+    /// Same violet as an NSColor, for the vector `MenuBarIcon.emblem`.
+    static let markNS = NSColor(srgbRed: 143 / 255, green: 127 / 255, blue: 255 / 255, alpha: 1)
+    /// Idle meter bars (faint, flat).
+    static let meterIdle = Color.white.opacity(0.22)
+
+    /// Live microphone / errors on the pill — the load-bearing "red = live".
+    static let alert = Color(red: 0xF0 / 255, green: 0x67 / 255, blue: 0x4F / 255)
 }

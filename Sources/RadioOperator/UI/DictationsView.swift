@@ -70,7 +70,7 @@ struct DictationsView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .overlay(RoundedRectangle(cornerRadius: 9)
-            .strokeBorder(Color.white.opacity(0.14),
+            .strokeBorder(Theme.lift(0.14),
                           style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
     }
 
@@ -123,7 +123,7 @@ struct DictationsView: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+        .background(Theme.lift(0.04), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9)
             .strokeBorder(Theme.hairline(0.07), lineWidth: 1))
         .frame(width: 280)
@@ -158,7 +158,7 @@ struct DictationsView: View {
             }
             .foregroundStyle(selectMode ? Theme.textMax : Theme.sidebarIdle)
             .padding(.horizontal, 11).padding(.vertical, 7)
-            .background(Color.white.opacity(selectMode ? 0.1 : 0.03),
+            .background(Theme.lift(selectMode ? 0.1 : 0.03),
                         in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(Theme.hairline(selectMode ? 0.14 : 0.07), lineWidth: 1))
@@ -470,7 +470,7 @@ private struct DictationRowView: View {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(selected ? Theme.green : .clear)
                 RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(selected ? Theme.green : Color.white.opacity(0.28),
+                    .strokeBorder(selected ? Theme.green : Theme.lift(0.28),
                                   lineWidth: 1.5)
                 if selected {
                     Image(systemName: "checkmark")
@@ -544,7 +544,7 @@ private struct DictationRowView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.lift(0.025), in: RoundedRectangle(cornerRadius: 8))
         .padding(.top, 8)
     }
 
@@ -648,7 +648,7 @@ private struct AppIconTile: View {
 
     private var genericTile: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(Color.white.opacity(0.06))
+            .fill(Theme.lift(0.06))
             .frame(width: 30, height: 30)
             .overlay(
                 Image(systemName: "waveform")
@@ -684,7 +684,7 @@ private struct FilterChipMenu<Items: View>: View {
             }
             .foregroundStyle(Theme.sidebarIdle)
             .padding(.horizontal, 11).padding(.vertical, 7)
-            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 9))
+            .background(Theme.lift(0.03), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9)
                 .strokeBorder(Theme.hairline(0.07), lineWidth: 1))
             .contentShape(Rectangle())
@@ -710,7 +710,7 @@ private struct BorderedIconButton: View {
                 .font(.system(size: 12.5, weight: .medium))
                 .foregroundStyle(hovering ? Theme.textBody : Theme.textFaint)
                 .frame(width: 32, height: 32)
-                .background(Color.white.opacity(hovering ? 0.07 : 0.03),
+                .background(Theme.lift(hovering ? 0.07 : 0.03),
                             in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Theme.hairline(0.07), lineWidth: 1))

@@ -1,64 +1,115 @@
 import AppKit
 
-/// The menu-bar glyph: a spade with a broadcast-signal motif, drawn as a vector
-/// so it stays crisp at any menu-bar scale. Rendered as a template image (macOS
-/// tints it to the menu bar) at rest, and solid red while capturing — keeping
-/// the load-bearing "red = live microphone" rule.
+/// The Radio Operator brand mark: a bold **R** enclosed in an **O** ring — the
+/// ring reads as both the letter O and a record button, so the whole thing is
+/// one confident "Enclosed" monogram. Authored on a 200×200 grid (see
+/// `design_handoff_ro_identity/assets/ro-mark.svg`) and drawn as a vector so it
+/// stays crisp from the 1024px app icon down to an 18pt menu-bar template.
+///
+/// This is the single geometry source of truth: the menu-bar glyph, the
+/// recording-pill mark, and the exported app icon all stroke the same path.
 enum MenuBarIcon {
+
+    /// The mark comes in two weights. `standard` matches `ro-mark.svg` /
+    /// `app-icon.svg` (ring r66 / stroke 15, R stroke 20). `menubar` is the
+    /// bolder `menubar-template.svg` variant (ring r78 / stroke 16, R stroke 24)
+    /// that fills more of the frame so it survives at 18pt.
+    enum Variant { case standard, menubar }
+
+    // MARK: - Image builders
+
+    /// The menu-bar glyph. A template image (the system tints it for the light
+    /// or dark bar and highlight state) at rest, and solid red while capturing —
+    /// keeping the load-bearing "red = live microphone" rule.
     static func image(capturing: Bool) -> NSImage {
         let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-            (capturing ? NSColor.systemRed : NSColor.black).setFill()
-            path(in: rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.06)).fill()
+            draw(in: rect, color: capturing ? .systemRed : .black, variant: .menubar)
             return true
         }
         img.isTemplate = !capturing
         return img
     }
 
-    /// The emblem tinted to a fixed color, for in-app surfaces like the dictation
-    /// pill (brass on the dark pill). Not a template — it keeps its own color.
+    /// The mark tinted to a fixed color, for in-app surfaces like the recording
+    /// pill (violet on the near-black capsule). Not a template — it keeps its
+    /// own color.
     static func emblem(color: NSColor, size: CGFloat) -> NSImage {
         NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-            color.setFill()
-            path(in: rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.06)).fill()
+            draw(in: rect, color: color, variant: .standard)
             return true
         }
     }
 
-    static func path(in rect: NSRect) -> NSBezierPath {
+    // MARK: - Vector drawing
+
+    /// Strokes the R-in-O mark to fit `rect`, mapping the 200×200 authoring grid
+    /// onto it. `color` paints the ring and the R at matched visual weight.
+    static func draw(in rect: NSRect, color: NSColor, variant: Variant) {
+        color.set()
+        let s = min(rect.width, rect.height) / 200.0
+
+        // Map a grid point (0…200, y-DOWN like SVG) to the y-UP image rect.
         func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-            NSPoint(x: rect.minX + x * rect.width, y: rect.minY + (1 - y) * rect.height)
+            NSPoint(x: rect.minX + x * s, y: rect.maxY - y * s)
         }
-        let p = NSBezierPath()
-        p.move(to: P(0.50, 0.07))
-        p.curve(to: P(0.92, 0.54), controlPoint1: P(0.66, 0.17), controlPoint2: P(0.94, 0.35))
-        p.curve(to: P(0.70, 0.70), controlPoint1: P(0.915, 0.66), controlPoint2: P(0.82, 0.735))
-        p.curve(to: P(0.54, 0.62), controlPoint1: P(0.63, 0.685), controlPoint2: P(0.57, 0.66))
-        p.curve(to: P(0.63, 0.91), controlPoint1: P(0.55, 0.71), controlPoint2: P(0.575, 0.81))
-        p.line(to: P(0.37, 0.91))
-        p.curve(to: P(0.46, 0.62), controlPoint1: P(0.425, 0.81), controlPoint2: P(0.45, 0.71))
-        p.curve(to: P(0.30, 0.70), controlPoint1: P(0.43, 0.66), controlPoint2: P(0.37, 0.685))
-        p.curve(to: P(0.08, 0.54), controlPoint1: P(0.18, 0.735), controlPoint2: P(0.085, 0.66))
-        p.curve(to: P(0.50, 0.07), controlPoint1: P(0.06, 0.35), controlPoint2: P(0.34, 0.17))
-        p.close()
 
-        let c = P(0.50, 0.50)
-        let dot = 0.058 * rect.width
-        p.appendOval(in: NSRect(x: c.x - dot, y: c.y - dot, width: 2 * dot, height: 2 * dot))
-
-        func arc(_ rIn: CGFloat, _ rOut: CGFloat, _ a0: CGFloat, _ a1: CGFloat) {
-            let seg = NSBezierPath()
-            seg.appendArc(withCenter: c, radius: rOut * rect.width, startAngle: a0, endAngle: a1, clockwise: false)
-            seg.appendArc(withCenter: c, radius: rIn * rect.width, startAngle: a1, endAngle: a0, clockwise: true)
-            seg.close()
-            p.append(seg)
+        // Per-variant geometry (grid units).
+        let ringR: CGFloat, ringW: CGFloat, rW: CGFloat
+        let stemX: CGFloat, stemTop: CGFloat, stemBot: CGFloat
+        let leftX: CGFloat, arcX: CGFloat, topY: CGFloat, botY: CGFloat, cy: CGFloat, bowlR: CGFloat
+        let legX0: CGFloat, legY0: CGFloat, legX1: CGFloat, legY1: CGFloat
+        switch variant {
+        case .standard:
+            ringR = 66; ringW = 15; rW = 20
+            stemX = 78; stemTop = 62; stemBot = 138
+            leftX = 78; arcX = 100; topY = 66; botY = 110; cy = 88; bowlR = 22
+            legX0 = 85; legY0 = 108; legX1 = 120; legY1 = 138
+        case .menubar:
+            ringR = 78; ringW = 16; rW = 24
+            stemX = 80; stemTop = 60; stemBot = 140
+            leftX = 80; arcX = 102; topY = 64; botY = 110; cy = 87; bowlR = 23
+            legX0 = 87; legY0 = 108; legX1 = 122; legY1 = 140
         }
-        arc(0.115, 0.155, -52, 52)
-        arc(0.195, 0.235, -48, 48)
-        arc(0.115, 0.155, 128, 232)
-        arc(0.195, 0.235, 132, 228)
 
-        p.windingRule = .evenOdd
-        return p
+        // The O ring (also the record button).
+        let c = P(100, 100)
+        let rr = ringR * s
+        let ring = NSBezierPath(ovalIn: NSRect(x: c.x - rr, y: c.y - rr, width: 2 * rr, height: 2 * rr))
+        ring.lineWidth = ringW * s
+        ring.stroke()
+
+        // R stem.
+        let stem = NSBezierPath()
+        stem.move(to: P(stemX, stemTop))
+        stem.line(to: P(stemX, stemBot))
+        stem.lineCapStyle = .round
+        stem.lineWidth = rW * s
+        stem.stroke()
+
+        // R bowl: flat left edge + a right-bulging semicircle, drawn as two
+        // cubic quarter-arcs (k = kappa·r) so it matches the SVG elliptical arc.
+        let k = 0.5522847498 * bowlR
+        let bowl = NSBezierPath()
+        bowl.move(to: P(leftX, topY))
+        bowl.line(to: P(arcX, topY))
+        bowl.curve(to: P(arcX + bowlR, cy),
+                   controlPoint1: P(arcX + k, topY),
+                   controlPoint2: P(arcX + bowlR, cy - k))
+        bowl.curve(to: P(arcX, botY),
+                   controlPoint1: P(arcX + bowlR, cy + k),
+                   controlPoint2: P(arcX + k, botY))
+        bowl.line(to: P(leftX, botY))
+        bowl.lineCapStyle = .round
+        bowl.lineJoinStyle = .round
+        bowl.lineWidth = rW * s
+        bowl.stroke()
+
+        // R leg.
+        let leg = NSBezierPath()
+        leg.move(to: P(legX0, legY0))
+        leg.line(to: P(legX1, legY1))
+        leg.lineCapStyle = .round
+        leg.lineWidth = rW * s
+        leg.stroke()
     }
 }

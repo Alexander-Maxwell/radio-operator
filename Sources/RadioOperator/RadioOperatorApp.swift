@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if TestRunner.handleIfRequested() { return }
         if ProbeRunner.handleIfRequested() { return }
         if MCPRunner.handleIfRequested() { return }
+        if IconExporter.handleIfRequested() { return }
+        if PreviewExporter.handleIfRequested() { return }
         ThemeFonts.register()
         let app = NSApplication.shared
         let delegate = AppDelegate()
@@ -405,7 +407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openOnboarding() {
         WindowRouter.shared.show(id: "onboarding", title: "Welcome to Radio Operator",
                                  size: NSSize(width: 940, height: 760),
-                                 darkChrome: true) {
+                                 brandChrome: true) {
             OnboardingView().environmentObject(SettingsStore.shared)
         }
     }
@@ -413,7 +415,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openMeetingWindow() {
         WindowRouter.shared.show(id: "meeting", title: "Meeting",
                                  size: NSSize(width: 560, height: 520),
-                                 darkChrome: true) {
+                                 brandChrome: true) {
             MeetingWindowView().environmentObject(AppState.shared)
         }
     }

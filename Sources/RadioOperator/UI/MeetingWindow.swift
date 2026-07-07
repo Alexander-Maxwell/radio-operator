@@ -25,7 +25,7 @@ struct MeetingWindowView: View {
         }
         .frame(minWidth: 480, minHeight: 420)
         .background(Theme.surface1)
-        .environment(\.colorScheme, .dark)
+        .environment(\.colorScheme, .light)
     }
 
     private var hairline: some View {
@@ -188,7 +188,7 @@ struct MeetingWindowView: View {
                 .frame(minHeight: 56, maxHeight: 110)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .background(Color.white.opacity(0.03),
+                .background(Theme.lift(0.03),
                             in: RoundedRectangle(cornerRadius: 9))
                 .overlay(RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(Theme.hairline(0.07), lineWidth: 1))

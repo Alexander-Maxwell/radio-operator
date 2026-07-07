@@ -5,7 +5,7 @@ import AppKit
 
 /// 1px internal card divider.
 private func cardDivider() -> some View {
-    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+    Rectangle().fill(Theme.lift(0.06)).frame(height: 1)
 }
 
 /// Pane title block: display title + mono badge, optional trailing accessory
@@ -112,7 +112,7 @@ private struct EditorWell: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(.hidden)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.lift(0.04)))
             .overlay(RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(Theme.hairline(0.08), lineWidth: 1))
     }
@@ -264,7 +264,7 @@ private struct TableShell: ViewModifier {
 
 /// 1px divider between table rows (fainter than card dividers).
 private func rowDivider() -> some View {
-    Rectangle().fill(Color.white.opacity(0.04)).frame(height: 1)
+    Rectangle().fill(Theme.lift(0.04)).frame(height: 1)
 }
 
 struct DictionaryPane: View {
@@ -291,7 +291,7 @@ struct DictionaryPane: View {
                     Color.clear.frame(width: 44, height: 1)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(Color.white.opacity(0.02))
+                .background(Theme.lift(0.02))
                 cardDivider()
 
                 ForEach($settings.data.dictionary) { $entry in
@@ -337,7 +337,7 @@ private struct DictionaryRow: View {
             .padding(.horizontal, 16).padding(.vertical, 8)
             if !isLast { rowDivider() }
         }
-        .background(hovering ? Color.white.opacity(0.02) : .clear)
+        .background(hovering ? Theme.lift(0.02) : .clear)
         .onHover { hovering = $0 }
     }
 }
@@ -406,7 +406,7 @@ private struct SnippetRow: View {
             .padding(.horizontal, 14).padding(.vertical, 8)
             if !isLast { rowDivider() }
         }
-        .background(hovering ? Color.white.opacity(0.02) : .clear)
+        .background(hovering ? Theme.lift(0.02) : .clear)
         .onHover { hovering = $0 }
     }
 }
@@ -860,7 +860,7 @@ struct PrivacyPane: View {
     }
 
     private var statDivider: some View {
-        Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1, height: 44)
+        Rectangle().fill(Theme.lift(0.06)).frame(width: 1, height: 44)
     }
 
     private func destructiveButton(_ title: String, action: @escaping () -> Void) -> some View {

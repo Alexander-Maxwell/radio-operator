@@ -36,7 +36,7 @@ struct OnboardingView: View {
         }
         .frame(minWidth: 640, minHeight: 640)
         .background(Theme.bgApp)
-        .environment(\.colorScheme, .dark)
+        .environment(\.colorScheme, .light)
         .onAppear(perform: refreshStatuses)
         .onReceive(poll) { _ in refreshStatuses() }
     }
@@ -162,7 +162,7 @@ struct OnboardingView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .roCard(fill: Color.white.opacity(0.015), radius: 16,
+        .roCard(fill: Theme.lift(0.015), radius: 16,
                 border: Theme.hairline(0.09))
     }
 
@@ -190,7 +190,7 @@ struct OnboardingView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .roCard(fill: Color.white.opacity(0.015), radius: 16,
+        .roCard(fill: Theme.lift(0.015), radius: 16,
                 border: Theme.hairline(0.09))
     }
 
@@ -264,13 +264,13 @@ struct OnboardingView: View {
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 64)
                 .padding(6)
-                .background(Color.white.opacity(0.02), in: RoundedRectangle(cornerRadius: 8))
+                .background(Theme.lift(0.02), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Theme.hairline(0.08), lineWidth: 1))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .roCard(fill: Color.white.opacity(0.03), radius: 13,
+        .roCard(fill: Theme.lift(0.03), radius: 13,
                 border: Theme.hairline(0.08))
     }
 
@@ -347,7 +347,7 @@ private struct PermissionRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 11) {
             RoundedRectangle(cornerRadius: 9)
-                .fill(Color.white.opacity(0.05))
+                .fill(Theme.lift(0.05))
                 .frame(width: 34, height: 34)
                 .overlay(Image(systemName: icon)
                     .font(.system(size: 14, weight: .regular))
@@ -378,7 +378,7 @@ private struct PermissionRow: View {
             }
         }
         .padding(12)
-        .background(granted ? Theme.green.opacity(0.05) : Color.white.opacity(0.025),
+        .background(granted ? Theme.green.opacity(0.05) : Theme.lift(0.025),
                     in: RoundedRectangle(cornerRadius: 11))
         .overlay(RoundedRectangle(cornerRadius: 11)
             .strokeBorder(granted ? Theme.green.opacity(0.18) : Theme.hairline(0.08),
@@ -386,16 +386,16 @@ private struct PermissionRow: View {
     }
 }
 
-/// Small bright Allow button: light fill, dark ink, hover-whitens.
+/// Small primary Allow button: violet fill, cream ink, hover-darkens.
 private struct AllowButtonStyle: ButtonStyle {
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.display(11.5, .semibold))
-            .foregroundStyle(Theme.rgb(0x0F1215))
+            .foregroundStyle(Theme.greenInk)
             .padding(.horizontal, 13).padding(.vertical, 6)
-            .background(hovering ? Color.white : Theme.textHi,
+            .background(hovering ? Theme.greenBtnHover : Theme.green,
                         in: RoundedRectangle(cornerRadius: 8))
             .opacity(configuration.isPressed ? 0.85 : 1)
             .onHover { hovering = $0 }

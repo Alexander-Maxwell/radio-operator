@@ -195,7 +195,7 @@ struct AskView: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+        .background(Theme.lift(0.03), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func pendingTurn(_ message: Message) -> some View {
@@ -467,7 +467,7 @@ private struct AskSuggestionChip: View {
                 .font(Theme.display(12.5))
                 .foregroundStyle(hovering ? Theme.textHi : Theme.sidebarIdle)
                 .padding(.horizontal, 11).padding(.vertical, 5)
-                .background(Color.white.opacity(hovering ? 0.07 : 0.04),
+                .background(Theme.lift(hovering ? 0.07 : 0.04),
                             in: RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7)
                     .strokeBorder(Theme.hairline(0.07), lineWidth: 1))

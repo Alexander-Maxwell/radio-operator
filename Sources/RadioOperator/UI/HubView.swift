@@ -72,7 +72,7 @@ enum HubWindow {
         HubState.shared.section = section
         WindowRouter.shared.show(id: "hub", title: "Radio Operator",
                                  size: NSSize(width: 1120, height: 700),
-                                 darkChrome: true) {
+                                 brandChrome: true) {
             HubView().environmentObject(SettingsStore.shared)
         }
     }
@@ -148,7 +148,7 @@ struct HubView: View {
         }
         .frame(minWidth: 960, minHeight: 600)
         .background(Theme.bgApp)
-        .environment(\.colorScheme, .dark)
+        .environment(\.colorScheme, .light)
         .environmentObject(health)
         .onAppear { health.start() }
         .onDisappear { health.stop() }
@@ -260,8 +260,8 @@ private struct SidebarItem: View {
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(on ? Color.white.opacity(0.065)
-                              : (hovering ? Color.white.opacity(0.03) : .clear)))
+                        .fill(on ? Theme.lift(0.065)
+                              : (hovering ? Theme.lift(0.03) : .clear)))
                 .padding(.horizontal, 10)
                 // 3×16 green accent bar flush to the sidebar's left edge.
                 UnevenRoundedRectangle(cornerRadii: .init(
@@ -313,7 +313,7 @@ struct StatusPill: View {
                     .foregroundStyle(Theme.textMono)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 9))
+            .background(Theme.lift(0.03), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9)
                 .strokeBorder(health.allClear ? Theme.hairline(0.09)
                               : Theme.amber.opacity(0.35), lineWidth: 1))
@@ -378,7 +378,7 @@ private struct StatusPopover: View {
         }
         .frame(width: 274)
         .background(Theme.surfacePop)
-        .environment(\.colorScheme, .dark)
+        .environment(\.colorScheme, .light)
     }
 
     private func row(_ name: String, ok: Bool, okLabel: String,

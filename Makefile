@@ -1,7 +1,11 @@
-.PHONY: build test test-core test-json probe probe-ask probe-wer smoke app run install release clean reset-tcc
+.PHONY: build test test-core test-json probe probe-ask probe-wer smoke app run install release clean reset-tcc icon
 
 build:
 	swift build
+
+# Regenerate the app icon (resources/RadioOperator.icns) from the vector mark.
+icon:
+	bash scripts/make-icon.sh
 
 test: build
 	.build/debug/RadioOperator --run-tests

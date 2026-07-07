@@ -235,7 +235,7 @@ private struct MeetingSearchField: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+        .background(Theme.lift(0.04), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9)
             .strokeBorder(Theme.hairline(0.07), lineWidth: 1))
         .frame(width: 280)
@@ -252,7 +252,7 @@ private struct RefreshButton: View {
                 .font(.system(size: 12.5, weight: .medium))
                 .foregroundStyle(hovering ? Theme.textBody : Theme.textFaint)
                 .frame(width: 32, height: 32)
-                .background(Color.white.opacity(hovering ? 0.07 : 0.03),
+                .background(Theme.lift(hovering ? 0.07 : 0.03),
                             in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Theme.hairline(0.07), lineWidth: 1))
@@ -512,7 +512,7 @@ private struct MeetingDetailView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textFaint)
                     .frame(width: 34, height: 34)
-                    .background(Color.white.opacity(0.04),
+                    .background(Theme.lift(0.04),
                                 in: RoundedRectangle(cornerRadius: 9))
                     .overlay(RoundedRectangle(cornerRadius: 9)
                         .strokeBorder(Theme.hairline(0.1), lineWidth: 1))
@@ -632,7 +632,7 @@ private struct MeetingDetailView: View {
                             .foregroundStyle(Theme.greenInk)
                     } else {
                         RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(Color.white.opacity(0.28), lineWidth: 1.5)
+                            .strokeBorder(Theme.lift(0.28), lineWidth: 1.5)
                     }
                 }
                 .frame(width: 16, height: 16)
@@ -653,12 +653,12 @@ private struct MeetingDetailView: View {
                     .font(Theme.mono(10, .medium))
                     .foregroundStyle(Theme.textFaint)
                     .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Color.white.opacity(0.05),
+                    .background(Theme.lift(0.05),
                                 in: RoundedRectangle(cornerRadius: 5))
             }
         }
         .padding(.vertical, 9).padding(.horizontal, 11)
-        .background(item.done ? Theme.green.opacity(0.045) : Color.white.opacity(0.025),
+        .background(item.done ? Theme.green.opacity(0.045) : Theme.lift(0.025),
                     in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9)
             .strokeBorder(item.done ? Theme.green.opacity(0.14) : Theme.hairline(0.05),
@@ -1039,7 +1039,7 @@ private struct MeetingAudioPlayerRow: View {
             }
         }
         .padding(.vertical, 9).padding(.horizontal, 14)
-        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 11))
+        .background(Theme.lift(0.025), in: RoundedRectangle(cornerRadius: 11))
         .overlay(RoundedRectangle(cornerRadius: 11)
             .strokeBorder(Theme.hairline(0.06), lineWidth: 1))
     }
@@ -1068,7 +1068,7 @@ private struct WaveformScrubber: View {
                 ForEach(0..<count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Double(i) / Double(count) < progress
-                              ? Theme.green : Color.white.opacity(0.16))
+                              ? Theme.green : Theme.lift(0.16))
                         .frame(width: 2,
                                height: geo.size.height * (0.3 + 0.6 * unitRandom(i)))
                 }

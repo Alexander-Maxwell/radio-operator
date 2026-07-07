@@ -2,90 +2,115 @@ import SwiftUI
 import AppKit
 import CoreText
 
-// MARK: - Design tokens (redesign handoff, 2026-07)
+// MARK: - Design tokens (Violet "Enclosed" identity, 2026-07)
 //
-// The single source of truth for the "signals-intelligence" design system:
-// dark surfaces, one green live-signal accent, mono micro-labels. Values are
-// the hex tokens from the design handoff README — change them there first.
+// The single source of truth for RO's brand identity: a LIGHT violet surface
+// system, one violet primary accent, mono micro-labels. Values are the locked
+// hex tokens from `design_handoff_ro_identity/README.md` — change them there
+// first. The recording pill is the one dark surface (see Palette).
 //
-// Rule: green means LIVE SIGNAL (ready / recording-safe / on-device) only.
-// Never use it as generic success chrome on states that are true 99% of the
-// time — that mistake is what the old five-LED SIGNAL ribbon got wrong.
+// Token NAMES are kept stable across the green→violet migration so call sites
+// don't churn; `green` is now the violet primary (aliased as `primary` for new
+// code). Semantic rule: the primary accent marks brand / ready / on-device /
+// selected. Red stays reserved for a live microphone (recRed).
 
 enum Theme {
 
-    // MARK: Surfaces (darkest → lightest)
+    // MARK: Surfaces (app base → white cards)
 
-    /// App/page background (deepest).
-    static let bgApp = rgb(0x0A0B0D)
-    /// Sidebar background.
-    static let bgSidebar = rgb(0x0C0E10)
+    /// App/page background.
+    static let bgApp = rgb(0xF5F3FB)
+    /// Sidebar background (a hair deeper than the app).
+    static let bgSidebar = rgb(0xEDEAF6)
     /// Transcript rail background.
-    static let bgRail = rgb(0x0C0F12)
+    static let bgRail = rgb(0xF0EDF8)
     /// Window body / primary surface.
-    static let surface1 = rgb(0x0F1215)
+    static let surface1 = rgb(0xFBFAFE)
     /// Nested card.
-    static let surface2 = rgb(0x101317)
+    static let surface2 = rgb(0xFFFFFF)
     /// Meeting card, query bar, source card.
-    static let surface3 = rgb(0x12161A)
+    static let surface3 = rgb(0xFFFFFF)
     /// Popover / dropdown.
-    static let surfacePop = rgb(0x161A1E)
+    static let surfacePop = rgb(0xFFFFFF)
 
-    // MARK: Text (brightest → dimmest)
+    // MARK: Text (deepest ink → faintest)
 
     /// Largest headings.
-    static let textMax = rgb(0xF4F7F9)
-    /// Primary text, row titles.
-    static let textHi = rgb(0xE7EBEE)
+    static let textMax = rgb(0x141026)
+    /// Primary text, row titles (--ro-ink).
+    static let textHi = rgb(0x191430)
     /// Emphasis body.
-    static let textBright = rgb(0xD6DBDF)
+    static let textBright = rgb(0x241C46)
     /// Body copy on cards.
-    static let textBody = rgb(0xC2C8CD)
+    static let textBody = rgb(0x332B5C)
     /// Muted body (transcript lines).
-    static let textMuted = rgb(0xB7BEC4)
+    static let textMuted = rgb(0x4A4276)
     /// Section paragraphs.
-    static let textDim = rgb(0x98A1A8)
+    static let textDim = rgb(0x5A5286)
     /// Meeting summaries.
-    static let textDim2 = rgb(0x9AA1A7)
-    /// Metadata, dim labels.
-    static let textFaint = rgb(0x8B949B)
+    static let textDim2 = rgb(0x635B8E)
+    /// Metadata, dim labels (--ro-ink-muted).
+    static let textFaint = rgb(0x857CA8)
     /// Section eyebrow labels.
-    static let textFaint2 = rgb(0x7F888F)
+    static let textFaint2 = rgb(0x948CB6)
     /// Fine metadata.
-    static let textMeta = rgb(0x6B7278)
+    static let textMeta = rgb(0xA198C0)
     /// Mono micro-labels.
-    static let textMono = rgb(0x5C656C)
+    static let textMono = rgb(0xA99FCB)
     /// Faintest (version string).
-    static let textGhost = rgb(0x454D53)
+    static let textGhost = rgb(0xBCB5D6)
     /// Inactive sidebar item label.
-    static let sidebarIdle = rgb(0xA6ADB3)
+    static let sidebarIdle = rgb(0x5A5286)
 
     // MARK: Accents (semantic — use sparingly)
 
-    /// Live / ready / recording-safe / on-device. The ONE brand accent.
-    static let green = rgb(0x37D67A)
-    /// Link hover.
-    static let greenHi = rgb(0x6EE6A2)
-    /// Primary button hover.
-    static let greenBtnHover = rgb(0x4BE08C)
-    /// Text/icon on a green fill.
-    static let greenInk = rgb(0x05230F)
-    /// Warnings, "processing", mid grades.
-    static let amber = rgb(0xF2B14C)
+    /// The ONE brand accent: violet primary. Brand / ready / on-device /
+    /// active / selected. (Name kept from the green era to avoid a global
+    /// rename; see `primary` alias below.)
+    static let green = rgb(0x6C5CE7)
+    /// Link hover / pressed (darken).
+    static let greenHi = rgb(0x5A49D8)
+    /// Primary button hover (darken).
+    static let greenBtnHover = rgb(0x5A49D8)
+    /// Text/icon on a primary fill (--ro-on-primary).
+    static let greenInk = rgb(0xF3F1FF)
+    /// Warnings, "processing", mid grades (readable amber on light).
+    static let amber = rgb(0xC0870F)
     /// Problems, failures.
-    static let alertRed = rgb(0xF0674F)
+    static let alertRed = rgb(0xCF3A28)
     /// Recording live dot + stop button (distinct from alert red).
-    static let recRed = rgb(0xF0503C)
+    static let recRed = rgb(0xE5402A)
     /// Stop button hover.
-    static let recRedHover = rgb(0xFF6450)
+    static let recRedHover = rgb(0xFF5A40)
     /// Remote speaker, brand entities.
-    static let speakerRemote = rgb(0x6BA5FF)
+    static let speakerRemote = rgb(0x3E78D4)
     /// People entities, AI-extraction accent.
-    static let entityPerson = rgb(0xC08CF0)
+    static let entityPerson = rgb(0x9A55D0)
 
-    /// Hairline borders: white at 0.06–0.13 alpha.
+    // MARK: Handoff-named aliases (for new code / the pill)
+
+    /// --ro-primary. Same value as `green`, read as violet.
+    static let primary = green
+    /// --ro-primary-press.
+    static let primaryPress = rgb(0x5A49D8)
+    /// --ro-primary-soft: secondary waveform bars, subtle highlights, chips.
+    static let primarySoft = rgb(0xA99CFF)
+    /// --ro-primary-bright: primary on DARK surfaces (pill mark + meter).
+    static let primaryBright = rgb(0x8F7FFF)
+    /// --ro-on-primary.
+    static let onPrimary = greenInk
+    /// --ro-border: opaque card & control border.
+    static let border = rgb(0xE2DDF3)
+
+    /// Hairline borders/dividers: ink at 0.05–0.13 alpha (reads on light).
     static func hairline(_ alpha: Double = 0.08) -> Color {
-        Color.white.opacity(alpha)
+        rgb(0x191430).opacity(alpha)
+    }
+
+    /// Subtle ink fill for hover lifts, control tracks, and keycaps on the
+    /// light surface (replaces the old white-on-dark `Color.white.opacity`).
+    static func lift(_ alpha: Double = 0.05) -> Color {
+        rgb(0x191430).opacity(alpha)
     }
 
     static func rgb(_ hex: UInt32) -> Color {
@@ -243,7 +268,7 @@ struct Keycap: View {
             .font(Theme.mono(10, .medium))
             .foregroundStyle(Theme.textDim)
             .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+            .background(Theme.lift(0.06), in: RoundedRectangle(cornerRadius: 4))
             .overlay(RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(Theme.hairline(0.1), lineWidth: 1))
     }
@@ -263,14 +288,15 @@ struct RoSegmented<T: Hashable>: View {
                     .font(Theme.display(12.5, .medium))
                     .foregroundStyle(on ? Theme.textMax : Theme.textFaint2)
                     .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(on ? Color.white.opacity(0.11) : .clear,
+                    .background(on ? Theme.surface2 : .clear,
                                 in: RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: on ? Theme.hairline(0.12) : .clear, radius: 1.5, y: 0.5)
                     .contentShape(Rectangle())
                     .onTapGesture { selection = value }
             }
         }
         .padding(3)
-        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 11))
+        .background(Theme.lift(0.05), in: RoundedRectangle(cornerRadius: 11))
     }
 }
 
@@ -279,7 +305,7 @@ struct HoverIconButton: View {
     let systemName: String
     var help: String = ""
     var hoverTint: Color = Theme.textHi
-    var hoverFill: Color = Color.white.opacity(0.07)
+    var hoverFill: Color = Theme.lift(0.06)
     let action: () -> Void
 
     @State private var hovering = false
@@ -325,7 +351,7 @@ struct DimButtonStyle: ButtonStyle {
             .font(Theme.display(12.5, .medium))
             .foregroundStyle(Theme.textBody)
             .padding(.horizontal, 12).padding(.vertical, 6.5)
-            .background(Color.white.opacity(hovering ? 0.08 : 0.045),
+            .background(hovering ? Theme.lift(0.07) : Theme.surface2,
                         in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(Theme.hairline(0.1), lineWidth: 1))
@@ -406,7 +432,7 @@ struct LevelMeter: View {
 /// Hover-tracked container: row background lift + action reveal, one state.
 struct HoverRow<Content: View>: View {
     var radius: CGFloat = 11
-    var liftColor: Color = Color.white.opacity(0.035)
+    var liftColor: Color = Theme.lift(0.04)
     @ViewBuilder var content: (Bool) -> Content
 
     @State private var hovering = false

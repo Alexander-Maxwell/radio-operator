@@ -91,7 +91,7 @@ struct RecordingHUDView: View {
     /// Which volatile channel updated most recently (drives the caption).
     @State private var lastVolatileWasMe = false
 
-    private let cardTint = Color(red: 16 / 255, green: 20 / 255, blue: 24 / 255)
+    private let cardTint = Theme.surface2
 
     var body: some View {
         Group {
@@ -102,7 +102,7 @@ struct RecordingHUDView: View {
             hud.contentSizeChanged(size)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        .environment(\.colorScheme, .dark)
+        .environment(\.colorScheme, .light)
         .onChange(of: state.meetingVolatileMe) { _, text in
             if !text.isEmpty { lastVolatileWasMe = true }
         }
@@ -137,7 +137,7 @@ struct RecordingHUDView: View {
             }
         }
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .strokeBorder(Color.white.opacity(0.13), lineWidth: 1))
+            .strokeBorder(Theme.lift(0.13), lineWidth: 1))
     }
 
     private var header: some View {
@@ -223,7 +223,7 @@ struct RecordingHUDView: View {
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 9))
+        .background(Theme.lift(0.03), in: RoundedRectangle(cornerRadius: 9))
     }
 
     /// Tail of a long hypothesis so the caption always shows the newest
@@ -252,7 +252,7 @@ struct RecordingHUDView: View {
             SquareIconButton(systemName: "doc.text", help: "Open transcript") {
                 WindowRouter.shared.show(id: "meeting", title: "Meeting",
                                          size: NSSize(width: 560, height: 520),
-                                         darkChrome: true) {
+                                         brandChrome: true) {
                     MeetingWindowView().environmentObject(AppState.shared)
                 }
             }
@@ -309,7 +309,7 @@ struct RecordingHUDView: View {
                     Capsule().fill(cardTint.opacity(0.95))
                 }
             }
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.13), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Theme.lift(0.13), lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -331,7 +331,7 @@ private struct SquareIconButton: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(hovering ? Theme.textHi : Theme.textBody)
                 .frame(width: 36, height: 36)
-                .background(Color.white.opacity(hovering ? 0.08 : 0.045),
+                .background(Theme.lift(hovering ? 0.08 : 0.045),
                             in: RoundedRectangle(cornerRadius: 9))
                 .overlay(RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(Theme.hairline(0.1), lineWidth: 1))
