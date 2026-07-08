@@ -356,7 +356,7 @@ private struct MeetingCard: View {
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 10) {
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
                     avatar("Y", fill: Theme.rgb(0x2A2E33), ink: Theme.textBody)
@@ -375,6 +375,18 @@ private struct MeetingCard: View {
                     .tracking(0.4)
                     .foregroundStyle(Theme.textMeta)
             }
+            // Visible delete affordance (also on right-click). Revealed on hover.
+            Button { confirmDelete = true } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(hovering ? Theme.alertRed : Theme.textFaint)
+                    .frame(width: 24, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(hovering ? 1 : 0)
+            .help("Delete note + recording")
+            .accessibilityLabel("Delete meeting")
         }
         .padding(.top, 13)
         .overlay(alignment: .top) {
