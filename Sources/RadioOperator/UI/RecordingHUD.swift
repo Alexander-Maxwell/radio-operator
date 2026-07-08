@@ -43,13 +43,19 @@ final class RecordingHUDController: ObservableObject {
     /// Resizes the panel to the SwiftUI content's ideal size, keeping the
     /// bottom-right corner fixed so collapse/expand stays where the user
     /// dragged it.
+    ///
+    /// Rounds to whole points and ignores sub-point changes: the meter animates
+    /// continuously (a 60fps TimelineView), which re-fires the geometry reader
+    /// every frame with tiny fractional jitter. Without this hysteresis, an
+    /// exact-inequality compare would `setFrame` every frame and the HUD would
+    /// pump up and down. A real content change (caption growing a line) still
+    /// clears the 1pt threshold and resizes.
     func contentSizeChanged(_ size: CGSize) {
         guard let panel, size.width > 1, size.height > 1 else { return }
-        let frame = NSRect(x: panel.frame.maxX - size.width,
-                           y: panel.frame.minY,
-                           width: size.width, height: size.height)
-        guard frame != panel.frame else { return }
-        panel.setFrame(frame, display: true)
+        let w = size.width.rounded(), h = size.height.rounded()
+        let cur = panel.frame
+        guard abs(cur.width - w) >= 1 || abs(cur.height - h) >= 1 else { return }
+        panel.setFrame(NSRect(x: cur.maxX - w, y: cur.minY, width: w, height: h), display: true)
         panel.invalidateShadow()
     }
 
@@ -166,7 +172,7 @@ struct RecordingHUDView: View {
                         .font(Theme.display(11))
                         .foregroundStyle(Theme.amber)
                 }
-                .frame(height: 20)
+                .frame(height: 22)   // match meterRow so a degraded flap can't change height
             } else {
                 meterRow("THEM", Theme.speakerRemote, level: state.meetingThemLevel)
             }
