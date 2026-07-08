@@ -214,11 +214,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.target = self
         menu.addItem(settings)
 
-        let onboarding = NSMenuItem(title: "Setup & Permissions…",
-                                    action: #selector(openOnboardingAction), keyEquivalent: "")
-        onboarding.target = self
-        menu.addItem(onboarding)
-
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit Radio Operator", action: #selector(NSApplication.terminate(_:)),
