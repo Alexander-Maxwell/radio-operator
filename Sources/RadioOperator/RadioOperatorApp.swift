@@ -204,6 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         library.target = self
         menu.addItem(library)
 
+        let tasks = NSMenuItem(title: "Tasks", action: #selector(openTasks), keyEquivalent: "t")
+        tasks.target = self
+        menu.addItem(tasks)
+
         let ask = NSMenuItem(title: "Ask Radio Operator…", action: #selector(openAsk), keyEquivalent: "k")
         ask.target = self
         menu.addItem(ask)
@@ -388,6 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openLibrary() { openHub(.dictations) }
 
     @objc private func openAsk() { openHub(.ask) }
+    @objc private func openTasks() { openHub(.tasks) }
 
     @objc private func openSettings() { openHub(.dictationSettings) }
 

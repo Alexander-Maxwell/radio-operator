@@ -192,19 +192,76 @@ struct HubView: View {
 
 private struct HubSidebar: View {
     @Binding var selection: HubSection
+    @State private var settingsHover = false
+    @State private var backHover = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            group("CONSOLE", [.dictations, .meetings, .tasks, .ask])
-                .padding(.top, 14)
-            group("SETTINGS", [.dictationSettings, .meetingSettings, .intelligence,
-                               .dictionary, .snippets, .privacy, .general])
-                .padding(.top, 22)
-            Spacer(minLength: 12)
+            brandHeader
+            if selection.isConsole {
+                group("CONSOLE", [.dictations, .meetings, .tasks, .ask])
+                    .padding(.top, 6)
+                Spacer(minLength: 12)
+                settingsEntry
+            } else {
+                backToConsole
+                    .padding(.top, 14)
+                group("SETTINGS", [.dictationSettings, .meetingSettings, .intelligence,
+                                   .dictionary, .snippets, .privacy, .general])
+                    .padding(.top, 6)
+                Spacer(minLength: 12)
+            }
             footer
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.bgSidebar)
+        .animation(.easeInOut(duration: 0.18), value: selection.isConsole)
+    }
+
+    /// Pinned above the footer in console mode: one entry into all settings.
+    private var settingsEntry: some View {
+        Button { selection = .dictationSettings } label: {
+            HStack(spacing: 11) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13.5, weight: .medium))
+                    .frame(width: 18)
+                Text("Settings")
+                    .font(Theme.display(13.5, .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Theme.sidebarIdle)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(settingsHover ? Theme.lift(0.03) : .clear))
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { settingsHover = $0 }
+        .padding(.bottom, 8)
+    }
+
+    /// Top of settings mode: returns to the console list.
+    private var backToConsole: some View {
+        Button { selection = .dictations } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 18)
+                Text("Back")
+                    .font(Theme.display(13.5, .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(backHover ? Theme.textMax : Theme.sidebarIdle)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(backHover ? Theme.lift(0.03) : .clear))
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { backHover = $0 }
+        .padding(.bottom, 6)
     }
 
     private func group(_ label: String, _ sections: [HubSection]) -> some View {
@@ -218,24 +275,35 @@ private struct HubSidebar: View {
         }
     }
 
+    private var brandHeader: some View {
+        HStack(spacing: 9) {
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 22, height: 22)
+            Text("Radio Operator")
+                .font(Theme.display(15, .semibold))
+                .foregroundStyle(Theme.textMax)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 4)
+    }
+
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Rectangle().fill(Theme.hairline(0.06)).frame(height: 1)
-            HStack(alignment: .top, spacing: 8) {
-                GlowDot(color: Theme.green, size: 7)
-                    .padding(.top, 3)
-                Text("Local-first · nothing\nleaves this Mac")
-                    .font(Theme.display(12))
-                    .foregroundStyle(Theme.textDim2)
-                    .lineSpacing(2)
+            HStack(spacing: 6) {
+                GlowDot(color: Theme.green, size: 5)
+                Text("Local-first · nothing leaves this Mac")
+                    .font(Theme.display(10))
+                    .foregroundStyle(Theme.textFaint)
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 20)
             Text("RADIO OPERATOR \(Theme.version)")
-                .font(Theme.mono(10))
+                .font(Theme.mono(9))
                 .tracking(0.5)
                 .foregroundStyle(Theme.textGhost)
-                .padding(.horizontal, 37)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
         }
     }
 }

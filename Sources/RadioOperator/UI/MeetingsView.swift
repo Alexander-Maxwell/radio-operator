@@ -82,7 +82,8 @@ struct MeetingsView: View {
                         parsed: parsedByID[meta.id],
                         state: summaryState(meta),
                         onOpen: { selectedID = meta.id },
-                        onRetry: { retry(meta) })
+                        onRetry: { retry(meta) },
+                        onDelete: { reload() })
                 }
             }
             .frame(maxWidth: 860)
@@ -272,8 +273,10 @@ private struct MeetingCard: View {
     let state: MeetingSummaryState
     let onOpen: () -> Void
     let onRetry: () -> Void
+    let onDelete: () -> Void
 
     @State private var hovering = false
+    @State private var confirmDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -301,6 +304,17 @@ private struct MeetingCard: View {
             Button("Show in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([meta.url])
             }
+            Divider()
+            Button("Delete Meeting", role: .destructive) { confirmDelete = true }
+        }
+        .confirmationDialog("Delete this meeting?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete note + recording", role: .destructive) {
+                NotesStore.shared.deleteMeetingNote(meta.url)
+                onDelete()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes the note and its audio from this Mac. This can't be undone.")
         }
     }
 
