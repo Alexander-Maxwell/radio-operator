@@ -164,7 +164,7 @@ struct RecordingHUDView: View {
 
     private var meters: some View {
         VStack(alignment: .leading, spacing: 9) {
-            meterRow("YOU", Theme.green, level: state.meetingMeLevel)
+            meterRow("YOU", Theme.speakerMe, level: state.meetingMeLevel)
             if state.meetingDegradedNoTap {
                 HStack(spacing: 11) {
                     trackLabel("THEM", Theme.speakerRemote)
@@ -212,7 +212,7 @@ struct RecordingHUDView: View {
             if let cap = caption {
                 Text(cap.speaker.rawValue)
                     .font(Theme.display(11, .semibold))
-                    .foregroundStyle(cap.speaker == .me ? Theme.green : Theme.speakerRemote)
+                    .foregroundStyle(cap.speaker == .me ? Theme.speakerMe : Theme.speakerRemote)
                 + Text("  \(latestWords(cap.text))")
                     .font(Theme.display(12))
                     .italic()

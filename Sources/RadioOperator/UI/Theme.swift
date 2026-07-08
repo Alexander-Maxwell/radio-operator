@@ -82,8 +82,11 @@ enum Theme {
     static let recRed = rgb(0xE5402A)
     /// Stop button hover.
     static let recRedHover = rgb(0xFF5A40)
-    /// Remote speaker, brand entities.
+    /// Remote speaker ("Them"), brand entities.
     static let speakerRemote = rgb(0x3E78D4)
+    /// Local speaker ("You") — teal, kept distinct from the violet brand accent
+    /// (which would blend into the light-violet UI) and the blue remote speaker.
+    static let speakerMe = rgb(0x0E9BA8)
     /// People entities, AI-extraction accent.
     static let entityPerson = rgb(0x9A55D0)
 

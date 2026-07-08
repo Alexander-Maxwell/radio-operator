@@ -129,7 +129,7 @@ struct MeetingWindowView: View {
     /// Speaker turn: 2px speaker-colored left border, faint tint, square
     /// left / rounded right corners.
     private func utteranceRow(_ u: Utterance) -> some View {
-        let color = u.speaker == .me ? Theme.green : Theme.speakerRemote
+        let color = u.speaker == .me ? Theme.speakerMe : Theme.speakerRemote
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 7) {
                 Text(u.speaker.rawValue)
@@ -159,7 +159,7 @@ struct MeetingWindowView: View {
     }
 
     private func ghostRow(speaker: Speaker, text: String) -> some View {
-        let color = speaker == .me ? Theme.green : Theme.speakerRemote
+        let color = speaker == .me ? Theme.speakerMe : Theme.speakerRemote
         return HStack(alignment: .firstTextBaseline, spacing: 7) {
             Text(speaker.rawValue)
                 .font(Theme.display(12, .semibold))

@@ -716,7 +716,7 @@ private struct MeetingDetailView: View {
                 Eyebrow(text: "TRANSCRIPT")
                 Spacer()
                 HStack(spacing: 12) {
-                    legendItem(color: Theme.green, label: "You")
+                    legendItem(color: Theme.speakerMe, label: "You")
                     if parsed.hasThem {
                         legendItem(color: Theme.speakerRemote, label: "Them")
                     }
@@ -885,7 +885,7 @@ private struct TranscriptTurnRow: View {
     let seekable: Bool
     let onSeek: () -> Void
 
-    private var color: Color { turn.speaker == .me ? Theme.green : Theme.speakerRemote }
+    private var color: Color { turn.speaker == .me ? Theme.speakerMe : Theme.speakerRemote }
     private var name: String { turn.speaker == .me ? "You" : "Them" }
 
     var body: some View {
