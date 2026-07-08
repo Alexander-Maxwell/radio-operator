@@ -384,7 +384,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openLibraryAction() { openLibrary() }
-    @objc private func openOnboardingAction() { openOnboarding() }
 
     private func openLibrary() { openHub(.dictations) }
 
