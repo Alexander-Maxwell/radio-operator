@@ -54,7 +54,7 @@ final class RecordingHUDController: ObservableObject {
         guard let panel, size.width > 1, size.height > 1 else { return }
         let w = size.width.rounded(), h = size.height.rounded()
         let cur = panel.frame
-        guard abs(cur.width - w) >= 1 || abs(cur.height - h) >= 1 else { return }
+        guard abs(cur.width - w) >= 2 || abs(cur.height - h) >= 2 else { return }
         panel.setFrame(NSRect(x: cur.maxX - w, y: cur.minY, width: w, height: h), display: true)
         panel.invalidateShadow()
     }
@@ -226,7 +226,10 @@ struct RecordingHUDView: View {
         }
         .lineLimit(2)
         .lineSpacing(2)
-        .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
+        // FIXED height (reserve 2 lines), NOT minHeight: the live caption streams
+        // and flaps 1<->2 lines, and any height change re-drives the panel resize
+        // -> the box oscillates. A constant height keeps the whole card size stable.
+        .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40, alignment: .topLeading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(Theme.lift(0.03), in: RoundedRectangle(cornerRadius: 9))
