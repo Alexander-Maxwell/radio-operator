@@ -224,6 +224,12 @@ struct SettingsData: Codable, Sendable {
     /// (Zoom, Meet, Teams, Slack, FaceTime). We only fire while idle, so our
     /// own dictation or meeting capture never self-triggers.
     var autoStartOnMic: Bool = true
+    /// Broaden auto-start to fire on ANY mic activity while idle — for calls we
+    /// can't identify by app: Google Meet in a browser tab, Slack huddles. OFF by
+    /// default (only per-call apps trigger). When ON, false starts are cleaned up
+    /// by the no-speech self-discard, at the cost of the occasional brief phantom
+    /// HUD when some other app opens the mic.
+    var autoStartBroad: Bool = false
     /// Hardware echo cancellation (Apple Voice-Processing I/O) on the mic, so
     /// the far side coming through the speakers is removed before transcription
     /// and never mislabeled as "Me". OFF by default: VPIO is a duplex unit that
@@ -348,7 +354,7 @@ struct SettingsData: Codable, Sendable {
         case autoSummarize, appearance, summaryTemplates, selectedTemplateID
         case appRules, applyStyleToSummaries
         case transcriptionLocaleIdentifier
-        case autoStartOnMic, micEchoCancellation
+        case autoStartOnMic, autoStartBroad, micEchoCancellation
         case commandHotkey
     }
 
@@ -401,6 +407,7 @@ struct SettingsData: Codable, Sendable {
         transcriptionLocaleIdentifier = (try? c.decodeIfPresent(String.self, forKey: .transcriptionLocaleIdentifier))
             ?? d.transcriptionLocaleIdentifier
         autoStartOnMic = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartOnMic)) ?? d.autoStartOnMic
+        autoStartBroad = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartBroad)) ?? d.autoStartBroad
         micEchoCancellation = (try? c.decodeIfPresent(Bool.self, forKey: .micEchoCancellation)) ?? d.micEchoCancellation
         commandHotkey = (try? c.decodeIfPresent(HoldHotkey.self, forKey: .commandHotkey)) ?? d.commandHotkey
     }

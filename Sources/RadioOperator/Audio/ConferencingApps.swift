@@ -24,6 +24,11 @@ enum ConferencingApps {
         "com.citrixonline.GoToMeeting",// GoToMeeting
         "com.bluejeansnet.BlueJeans",  // BlueJeans
         "com.ringcentral.RingCentral", // RingCentral
+        // Google Meet installed as a Chrome PWA ("Google Meet.app"). The app id
+        // is derived from Meet's start URL, so it's stable across machines, and
+        // the PWA is opened per-call — running ≈ on a Meet call. (Meet in a plain
+        // browser tab is NOT this and stays undetectable; use the broad setting.)
+        "com.google.Chrome.app.kjgfgldnnfoeklkmfkjfagphfepbbdan",
     ]
 
     /// True if a per-call conferencing app is among the given running bundle

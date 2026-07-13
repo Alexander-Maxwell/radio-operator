@@ -357,7 +357,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A bare mic-open with no per-call app is the common false trigger (a
         // website's mic check, our own probe). Log it and bail, so a later "why
         // did it record?" has a trail (metadata only — no content).
-        guard ConferencingApps.aCallAppIsRunning() else {
+        let broad = SettingsStore.shared.data.autoStartBroad
+        guard ConferencingApps.aCallAppIsRunning() || broad else {
             if SettingsStore.shared.data.autoStartOnMic,
                !MicCapture.shared.isCapturing, !MeetingController.shared.isActive {
                 NSLog("RadioOperator auto-start: mic opened but no per-call app running — not recording")
@@ -375,10 +376,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     settingEnabled: SettingsStore.shared.data.autoStartOnMic,
                     weAreCapturing: MicCapture.shared.isCapturing,
                     meetingActive: MeetingController.shared.isActive,
-                    conferencingAppRunning: ConferencingApps.aCallAppIsRunning()),
+                    conferencingAppRunning: ConferencingApps.aCallAppIsRunning() || broad),
                   MicActivityMonitor.isRunning(MicActivityMonitor.currentDefaultInput())
             else { return }
-            NSLog("RadioOperator auto-start: per-call app detected \(ConferencingApps.runningCallApps()) — arming meeting")
+            let via = ConferencingApps.aCallAppIsRunning()
+                ? "per-call app \(ConferencingApps.runningCallApps())" : "broad mic-activity"
+            NSLog("RadioOperator auto-start: \(via) — arming meeting")
             MeetingController.shared.start(autoStarted: true)
             self.requestNotificationAuthIfNeeded()
             MeetingController.notify(

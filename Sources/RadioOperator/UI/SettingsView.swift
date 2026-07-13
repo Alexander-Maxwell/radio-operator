@@ -473,8 +473,13 @@ struct MeetingsPane: View {
             Card(title: "Capture") {
                 VStack(spacing: 0) {
                     SettingRow(title: "Auto-start on call",
-                               desc: "Begins capture the moment another app uses your mic — Zoom, Meet, Teams, Slack, FaceTime. Your own dictation never triggers it.") {
+                               desc: "Begins capture when a call app opens your mic — Zoom, FaceTime, Webex, the Google Meet app. Your own dictation never triggers it.") {
                         Toggle("", isOn: $settings.data.autoStartOnMic).labelsHidden()
+                    }
+                    cardDivider()
+                    SettingRow(title: "Also on any mic activity",
+                               desc: "Extends auto-start to calls we can't detect by app — Google Meet in a browser tab, Slack huddles. A start with no speech in 15 seconds discards itself.") {
+                        Toggle("", isOn: $settings.data.autoStartBroad).labelsHidden()
                     }
                     cardDivider()
                     SettingRow(title: "Auto-summarize on stop",
