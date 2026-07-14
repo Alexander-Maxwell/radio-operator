@@ -20,31 +20,21 @@ enum MenuBarIcon {
     /// The menu-bar glyph. Template (system-tinted) at rest, solid red while
     /// capturing — keeping the load-bearing "red = live microphone" rule.
     static func image(capturing: Bool) -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        guard let sil = silhouette else { return NSImage(size: size) }
-        let out = NSImage(size: size, flipped: false) { rect in
-            let s = sil.size
-            let scale = min(rect.width / s.width, rect.height / s.height)
-            let w = s.width * scale, h = s.height * scale
-            let r = NSRect(x: (rect.width - w) / 2, y: (rect.height - h) / 2, width: w, height: h)
-            (capturing ? NSColor.systemRed : NSColor.black).setFill()
+        // A native SF Symbol: crisp at 18pt (the detailed operator art only
+        // reads at Dock size, so it stays on the app icon). Template = the
+        // system tints it for the bar; red while capturing.
+        let cfg = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let sym = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right",
+                          accessibilityDescription: "Radio Operator")?
+            .withSymbolConfiguration(cfg) ?? NSImage(size: NSSize(width: 18, height: 18))
+        guard capturing else { sym.isTemplate = true; return sym }
+        return NSImage(size: sym.size, flipped: false) { rect in
+            NSColor.systemRed.setFill()
             NSBezierPath(rect: rect).fill()
-            sil.draw(in: r, from: .zero, operation: .destinationIn, fraction: 1)
+            sym.draw(in: rect, from: .zero, operation: .destinationIn, fraction: 1)
             return true
         }
-        out.isTemplate = !capturing   // system tints the black silhouette for the bar
-        return out
     }
-
-    /// The tactical radio-operator silhouette (black on transparent), from the
-    /// app bundle, or the repo checkout for `swift run` debug builds.
-    private static let silhouette: NSImage? = {
-        if let url = Bundle.main.url(forResource: "operator-silhouette", withExtension: "png"),
-           let img = NSImage(contentsOf: url) { return img }
-        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-        let repo = exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        return NSImage(contentsOf: repo.appendingPathComponent("resources/operator-silhouette.png"))
-    }()
 
     /// The mark tinted for in-app use (e.g. cream on the violet tile, or the
     /// pill). Not a template.
