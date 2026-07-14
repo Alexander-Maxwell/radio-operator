@@ -67,6 +67,9 @@ if [ -f resources/RadioOperator.icns ]; then
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string RadioOperator" "$APP/Contents/Info.plist" 2>/dev/null || true
 fi
 
+# Menu-bar silhouette (loaded at runtime by MenuBarIcon).
+cp resources/operator-silhouette.png "$APP/Contents/Resources/" 2>/dev/null || true
+
 # Bundled UI fonts (Space Grotesk + IBM Plex Mono, OFL — licenses ship too).
 if [ -d resources/fonts ]; then
   mkdir -p "$APP/Contents/Resources/fonts"
