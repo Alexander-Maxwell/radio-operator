@@ -29,13 +29,13 @@ final class WindowRouter: NSObject, NSWindowDelegate {
         )
         window.title = title
         if brandChrome {
-            // Brand surfaces are light-committed (Violet "Enclosed" identity):
-            // the title bar blends into the light app background regardless of
+            // Brand surfaces are dark-committed (Tactical Night Operations): the
+            // title bar blends into the Rich Black app background regardless of
             // the system appearance.
             window.titlebarAppearsTransparent = true
-            window.appearance = NSAppearance(named: .aqua)
-            window.backgroundColor = NSColor(srgbRed: 0xF5 / 255, green: 0xF3 / 255,
-                                             blue: 0xFB / 255, alpha: 1)
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = NSColor(srgbRed: 0x0B / 255, green: 0x0D / 255,
+                                             blue: 0x0F / 255, alpha: 1)
         }
         window.isReleasedWhenClosed = false
         window.center()

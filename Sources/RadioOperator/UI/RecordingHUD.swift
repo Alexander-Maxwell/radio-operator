@@ -101,7 +101,7 @@ struct RecordingHUDView: View {
             if hud.collapsed { pill } else { card }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        .environment(\.colorScheme, .light)
+        .environment(\.colorScheme, .dark)
         .onChange(of: state.meetingVolatileMe) { _, text in
             if !text.isEmpty { lastVolatileWasMe = true }
         }

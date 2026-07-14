@@ -7,6 +7,6 @@ import AppKit
 @MainActor
 enum Appearance {
     static func apply(_ mode: AppearanceMode) {
-        NSApp.appearance = NSAppearance(named: .aqua)
+        NSApp.appearance = NSAppearance(named: .darkAqua)
     }
 }

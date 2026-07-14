@@ -16,104 +16,101 @@ import CoreText
 
 enum Theme {
 
-    // MARK: Surfaces (app base → white cards)
+    // MARK: Surfaces (Tactical Night Operations — dark)
 
-    /// App/page background.
-    static let bgApp = rgb(0xF5F3FB)
-    /// Sidebar background (a hair deeper than the app).
-    static let bgSidebar = rgb(0xEDEAF6)
+    /// Window background — Rich Black.
+    static let bgApp = rgb(0x0B0D0F)
+    /// Sidebar / panel background — Charcoal.
+    static let bgSidebar = rgb(0x14181D)
     /// Transcript rail background.
-    static let bgRail = rgb(0xF0EDF8)
-    /// Window body / primary surface.
-    static let surface1 = rgb(0xFBFAFE)
-    /// Nested card.
-    static let surface2 = rgb(0xFFFFFF)
-    /// Meeting card, query bar, source card.
-    static let surface3 = rgb(0xFFFFFF)
-    /// Popover / dropdown.
-    static let surfacePop = rgb(0xFFFFFF)
+    static let bgRail = rgb(0x101419)
+    /// Window body / secondary surface — Charcoal.
+    static let surface1 = rgb(0x14181D)
+    /// Card — Tactical Graphite.
+    static let surface2 = rgb(0x1A2026)
+    /// Nested / meeting card.
+    static let surface3 = rgb(0x1A2026)
+    /// Popover / dropdown — Dark Steel.
+    static let surfacePop = rgb(0x242B33)
 
-    // MARK: Text (deepest ink → faintest)
+    // MARK: Text (brightest → faintest)
 
     /// Largest headings.
-    static let textMax = rgb(0x141026)
-    /// Primary text, row titles (--ro-ink).
-    static let textHi = rgb(0x191430)
+    static let textMax = rgb(0xFFFFFF)
+    /// Primary text, row titles.
+    static let textHi = rgb(0xF2F3F5)
     /// Emphasis body.
-    static let textBright = rgb(0x241C46)
+    static let textBright = rgb(0xE3E8ED)
     /// Body copy on cards.
-    static let textBody = rgb(0x332B5C)
-    /// Muted body (transcript lines).
-    static let textMuted = rgb(0x4A4276)
+    static let textBody = rgb(0xCBD1D8)
+    /// Muted body (transcript lines) — Secondary.
+    static let textMuted = rgb(0xB5BDC6)
     /// Section paragraphs.
-    static let textDim = rgb(0x5A5286)
+    static let textDim = rgb(0x98A1AB)
     /// Meeting summaries.
-    static let textDim2 = rgb(0x635B8E)
-    /// Metadata, dim labels (--ro-ink-muted).
-    static let textFaint = rgb(0x857CA8)
+    static let textDim2 = rgb(0x8B95A0)
+    /// Metadata, dim labels — Muted.
+    static let textFaint = rgb(0x7B8793)
     /// Section eyebrow labels.
-    static let textFaint2 = rgb(0x948CB6)
+    static let textFaint2 = rgb(0x6D7883)
     /// Fine metadata.
-    static let textMeta = rgb(0xA198C0)
+    static let textMeta = rgb(0x616B76)
     /// Mono micro-labels.
-    static let textMono = rgb(0xA99FCB)
-    /// Faintest (version string).
-    static let textGhost = rgb(0xBCB5D6)
+    static let textMono = rgb(0x7B8793)
+    /// Faintest (version string) — Disabled.
+    static let textGhost = rgb(0x505962)
     /// Inactive sidebar item label.
-    static let sidebarIdle = rgb(0x5A5286)
+    static let sidebarIdle = rgb(0x98A1AB)
 
     // MARK: Accents (semantic — use sparingly)
 
-    /// The ONE brand accent: violet primary. Brand / ready / on-device /
-    /// active / selected. (Name kept from the green era to avoid a global
-    /// rename; see `primary` alias below.)
-    static let green = rgb(0x6C5CE7)
-    /// Link hover / pressed (darken).
-    static let greenHi = rgb(0x5A49D8)
-    /// Primary button hover (darken).
-    static let greenBtnHover = rgb(0x5A49D8)
-    /// Text/icon on a primary fill (--ro-on-primary).
-    static let greenInk = rgb(0xF3F1FF)
-    /// Warnings, "processing", mid grades (readable amber on light).
-    static let amber = rgb(0xC0870F)
-    /// Problems, failures.
-    static let alertRed = rgb(0xCF3A28)
-    /// Recording live dot + stop button (distinct from alert red).
-    static let recRed = rgb(0xE5402A)
-    /// Stop button hover.
-    static let recRedHover = rgb(0xFF5A40)
-    /// Remote speaker ("Them"), brand entities.
-    static let speakerRemote = rgb(0x3E78D4)
-    /// Local speaker ("You") — teal, kept distinct from the violet brand accent
-    /// (which would blend into the light-violet UI) and the blue remote speaker.
-    static let speakerMe = rgb(0x0E9BA8)
-    /// People entities, AI-extraction accent.
-    static let entityPerson = rgb(0x9A55D0)
+    /// The ONE brand accent: Burnished Brass — the signature color. (Name kept
+    /// from the green era to avoid a global rename; see `primary` alias below.)
+    static let green = rgb(0xBFA06A)
+    /// Link hover / pressed (brighten).
+    static let greenHi = rgb(0xD3B67C)
+    /// Primary button hover.
+    static let greenBtnHover = rgb(0xD3B67C)
+    /// Text/icon on a brass fill.
+    static let greenInk = rgb(0x111111)
+    /// Warnings, "processing" — Amber.
+    static let amber = rgb(0xE2A33A)
+    /// Problems, failures — Muted Red.
+    static let alertRed = rgb(0xC24949)
+    /// Recording live dot + stop — Operational Red.
+    static let recRed = rgb(0xC64545)
+    /// Recording pulse / danger hover.
+    static let recRedHover = rgb(0xD65252)
+    /// Remote speaker ("Them" / Opponent) — Military Olive.
+    static let speakerRemote = rgb(0x70886C)
+    /// Local speaker ("You" / Speaking) — Brass.
+    static let speakerMe = rgb(0xBFA06A)
+    /// People entities, AI-extraction accent — Olive.
+    static let entityPerson = rgb(0x738A65)
 
-    // MARK: Handoff-named aliases (for new code / the pill)
+    // MARK: Named aliases (for new code / the pill)
 
-    /// --ro-primary. Same value as `green`, read as violet.
+    /// Same value as `green` (Burnished Brass).
     static let primary = green
-    /// --ro-primary-press.
-    static let primaryPress = rgb(0x5A49D8)
-    /// --ro-primary-soft: secondary waveform bars, subtle highlights, chips.
-    static let primarySoft = rgb(0xA99CFF)
-    /// --ro-primary-bright: primary on DARK surfaces (pill mark + meter).
-    static let primaryBright = rgb(0x8F7FFF)
-    /// --ro-on-primary.
+    /// Primary pressed.
+    static let primaryPress = rgb(0x92764A)
+    /// Secondary brass (soft highlights, chips).
+    static let primarySoft = rgb(0xD6C08E)
+    /// Brass on DARK surfaces (pill mark + meter) — brighter for contrast.
+    static let primaryBright = rgb(0xD6C08E)
+    /// On-primary text.
     static let onPrimary = greenInk
-    /// --ro-border: opaque card & control border.
-    static let border = rgb(0xE2DDF3)
+    /// Opaque card & control border — Gunmetal.
+    static let border = rgb(0x343E47)
 
-    /// Hairline borders/dividers: ink at 0.05–0.13 alpha (reads on light).
+    /// Hairline borders/dividers: white at 0.04–0.13 alpha (reads on dark).
     static func hairline(_ alpha: Double = 0.08) -> Color {
-        rgb(0x191430).opacity(alpha)
+        Color.white.opacity(alpha)
     }
 
-    /// Subtle ink fill for hover lifts, control tracks, and keycaps on the
-    /// light surface (replaces the old white-on-dark `Color.white.opacity`).
+    /// Subtle light fill for hover lifts, control tracks, keycaps on dark.
     static func lift(_ alpha: Double = 0.05) -> Color {
-        rgb(0x191430).opacity(alpha)
+        Color.white.opacity(alpha)
     }
 
     static func rgb(_ hex: UInt32) -> Color {

@@ -150,7 +150,7 @@ struct HubView: View {
         }
         .frame(minWidth: 960, minHeight: 600)
         .background(Theme.bgApp)
-        .environment(\.colorScheme, .light)
+        .environment(\.colorScheme, .dark)
         .environmentObject(health)
         .onAppear { health.start() }
         .onDisappear { health.stop() }
@@ -449,7 +449,7 @@ private struct StatusPopover: View {
         }
         .frame(width: 274)
         .background(Theme.surfacePop)
-        .environment(\.colorScheme, .light)
+        .environment(\.colorScheme, .dark)
     }
 
     private func row(_ name: String, ok: Bool, okLabel: String,

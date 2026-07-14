@@ -36,7 +36,7 @@ struct OnboardingView: View {
         }
         .frame(minWidth: 640, minHeight: 640)
         .background(Theme.bgApp)
-        .environment(\.colorScheme, .light)
+        .environment(\.colorScheme, .dark)
         .onAppear(perform: refreshStatuses)
         .onReceive(poll) { _ in refreshStatuses() }
     }

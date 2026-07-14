@@ -25,7 +25,7 @@ struct MeetingWindowView: View {
         }
         .frame(minWidth: 480, minHeight: 420)
         .background(Theme.surface1)
-        .environment(\.colorScheme, .light)
+        .environment(\.colorScheme, .dark)
     }
 
     private var hairline: some View {
