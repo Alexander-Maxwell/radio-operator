@@ -13,9 +13,13 @@ final class RecordingHUDController: ObservableObject {
     static let shared = RecordingHUDController()
 
     /// Collapsed ⇄ expanded. Survives across meetings within the app session.
-    @Published var collapsed = false
+    @Published var collapsed = false {
+        didSet { sizedForCollapsed = nil }
+    }
 
     private var panel: NSPanel?
+    /// The `collapsed` value the panel is already sized for; nil = re-size next.
+    private var sizedForCollapsed: Bool?
 
     private init() {}
 
@@ -40,21 +44,17 @@ final class RecordingHUDController: ObservableObject {
         panel?.orderOut(nil)
     }
 
-    /// Resizes the panel to the SwiftUI content's ideal size, keeping the
-    /// bottom-right corner fixed so collapse/expand stays where the user
-    /// dragged it.
-    ///
-    /// Rounds to whole points and ignores sub-point changes: the meter animates
-    /// continuously (a 60fps TimelineView), which re-fires the geometry reader
-    /// every frame with tiny fractional jitter. Without this hysteresis, an
-    /// exact-inequality compare would `setFrame` every frame and the HUD would
-    /// pump up and down. A real content change (caption growing a line) still
-    /// clears the 1pt threshold and resizes.
+    /// Sizes the panel to the content ONCE per collapse/expand, bottom-right
+    /// anchored. ponytail: the meter animates at 60fps and re-fires the geometry
+    /// reader forever — tracking it live is what made the HUD oscillate. Take the
+    /// first measurement after a state flip, ignore the rest. (The caption is
+    /// fixed-height, so that first measurement already covers a 2-line caption.)
     func contentSizeChanged(_ size: CGSize) {
-        guard let panel, size.width > 1, size.height > 1 else { return }
+        guard let panel, size.width > 1, size.height > 1,
+              sizedForCollapsed != collapsed else { return }
+        sizedForCollapsed = collapsed
         let w = size.width.rounded(), h = size.height.rounded()
         let cur = panel.frame
-        guard abs(cur.width - w) >= 2 || abs(cur.height - h) >= 2 else { return }
         panel.setFrame(NSRect(x: cur.maxX - w, y: cur.minY, width: w, height: h), display: true)
         panel.invalidateShadow()
     }
