@@ -14,28 +14,21 @@ final class RecordingHUDController: ObservableObject {
 
     /// Collapsed ⇄ expanded. Survives across meetings within the app session.
     @Published var collapsed = false {
-        didSet { sizedForCollapsed = nil }
+        didSet { resizePanel() }
     }
 
     private var panel: NSPanel?
-    /// The `collapsed` value the panel is already sized for; nil = re-size next.
-    private var sizedForCollapsed: Bool?
 
     private init() {}
 
     func show() {
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
-        // Fresh meeting: park at the default corner; the geometry callback
-        // trues up the exact size on first layout, bottom-right anchored.
-        let estimate = collapsed ? NSSize(width: 140, height: 36)
-                                 : NSSize(width: 352, height: 286)
+        let size = Self.hudSize(collapsed: collapsed)
         if let screen = activeScreen() {
             let vis = screen.visibleFrame
-            panel.setFrame(NSRect(x: vis.maxX - 24 - estimate.width,
-                                  y: vis.minY + 24,
-                                  width: estimate.width, height: estimate.height),
-                           display: false)
+            panel.setFrame(NSRect(x: vis.maxX - 24 - size.width, y: vis.minY + 24,
+                                  width: size.width, height: size.height), display: false)
         }
         panel.orderFrontRegardless()
     }
@@ -44,18 +37,22 @@ final class RecordingHUDController: ObservableObject {
         panel?.orderOut(nil)
     }
 
-    /// Sizes the panel to the content ONCE per collapse/expand, bottom-right
-    /// anchored. ponytail: the meter animates at 60fps and re-fires the geometry
-    /// reader forever — tracking it live is what made the HUD oscillate. Take the
-    /// first measurement after a state flip, ignore the rest. (The caption is
-    /// fixed-height, so that first measurement already covers a 2-line caption.)
-    func contentSizeChanged(_ size: CGSize) {
-        guard let panel, size.width > 1, size.height > 1,
-              sizedForCollapsed != collapsed else { return }
-        sizedForCollapsed = collapsed
-        let w = size.width.rounded(), h = size.height.rounded()
+    /// Fixed HUD sizes. ponytail: the meter animates at 60fps, so ANY live
+    /// content-driven resize oscillates. The card is fixed-width with a
+    /// fixed-height caption, so its size is constant — no tracking needed. Bump
+    /// the expanded height if the card layout ever grows past it (bottom-anchored,
+    /// so the footer/buttons never clip — only the header would).
+    static func hudSize(collapsed: Bool) -> NSSize {
+        collapsed ? NSSize(width: 140, height: 40) : NSSize(width: 352, height: 312)
+    }
+
+    /// Bottom-right-anchored resize to the fixed size for the current state.
+    private func resizePanel() {
+        guard let panel else { return }
+        let size = Self.hudSize(collapsed: collapsed)
         let cur = panel.frame
-        panel.setFrame(NSRect(x: cur.maxX - w, y: cur.minY, width: w, height: h), display: true)
+        panel.setFrame(NSRect(x: cur.maxX - size.width, y: cur.minY,
+                              width: size.width, height: size.height), display: true)
         panel.invalidateShadow()
     }
 
@@ -102,10 +99,6 @@ struct RecordingHUDView: View {
     var body: some View {
         Group {
             if hud.collapsed { pill } else { card }
-        }
-        .fixedSize()
-        .onGeometryChange(for: CGSize.self, of: { $0.size }) { size in
-            hud.contentSizeChanged(size)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .environment(\.colorScheme, .light)
