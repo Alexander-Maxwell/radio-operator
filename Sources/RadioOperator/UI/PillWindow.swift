@@ -105,7 +105,9 @@ struct PillView: View {
                 )
                 .shadow(color: .black.opacity(0.45), radius: 12, y: 6)
                 .shadow(color: Palette.mark.opacity(isLive ? 0.16 : 0), radius: 9)
-                .animation(.spring(response: 0.26, dampingFraction: 0.85), value: pillPhase)
+                // No cross-state animation: the spring made the outgoing state (e.g.
+                // the recording oscilloscope) fade out *behind* the incoming one on
+                // release — a lingering "ghost in the background". States snap instead.
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 3)
