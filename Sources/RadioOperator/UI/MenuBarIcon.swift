@@ -21,17 +21,17 @@ enum MenuBarIcon {
     /// capturing — keeping the load-bearing "red = live microphone" rule.
     static func image(capturing: Bool) -> NSImage {
         let out = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-            drawDish(in: rect, color: capturing ? .systemRed : .black)
+            drawAntenna(in: rect, color: capturing ? .systemRed : .black)
             return true
         }
         out.isTemplate = !capturing   // system tints it for the bar
         return out
     }
 
-    /// A SATCOM dish aimed at the sky: filled parabolic reflector on a pedestal,
-    /// feed horn on an arm, three uplink waves. Reads at the 36px Retina menu-bar
-    /// size. Drawn on a 200×200 grid (y-down) mapped to `rect`.
-    static func drawDish(in rect: NSRect, color: NSColor) {
+    /// The SATCOM star-burst antenna: radial elements from a hub on a tripod
+    /// (the operator's field antenna). Reads at the 36px Retina menu-bar size.
+    /// Drawn on a 200×200 grid (y-down) mapped to `rect`.
+    static func drawAntenna(in rect: NSRect, color: NSColor) {
         color.set()
         let s = min(rect.width, rect.height) / 200
         func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
@@ -41,22 +41,23 @@ enum MenuBarIcon {
             let p = NSBezierPath(); p.move(to: a); p.line(to: b)
             p.lineWidth = w * s; p.lineCapStyle = .round; p.stroke()
         }
-        // Reflector (filled bowl, opening up).
-        let dish = NSBezierPath()
-        dish.appendArc(withCenter: P(90, 66), radius: 80 * s, startAngle: 200, endAngle: 340, clockwise: false)
-        dish.appendArc(withCenter: P(90, 66), radius: 58 * s, startAngle: 340, endAngle: 200, clockwise: true)
-        dish.close(); dish.fill()
-        stroke(P(90, 126), P(90, 172), 14)   // pedestal
-        stroke(P(66, 176), P(114, 176), 14)  // foot
-        let fc = P(126, 46)
-        stroke(P(120, 96), fc, 8)            // feed arm
-        let fh = 10.0 * s
-        NSBezierPath(ovalIn: NSRect(x: fc.x - fh, y: fc.y - fh, width: 2 * fh, height: 2 * fh)).fill()  // horn
-        for rad in [26.0, 42.0, 58.0] {      // uplink waves
-            let w = NSBezierPath()
-            w.appendArc(withCenter: fc, radius: rad * s, startAngle: -8, endAngle: 58, clockwise: false)
-            w.lineWidth = 7 * s; w.lineCapStyle = .round; w.stroke()
+        let hub = P(96, 78)
+        // Radial antenna elements (angle°, length) — the "burst".
+        let spokes: [(Double, Double)] = [(12,60),(40,68),(66,58),(92,70),(118,60),(146,66),(172,56),(198,52),(-18,54)]
+        for (ang, len) in spokes {
+            let r = ang * .pi / 180
+            stroke(hub, NSPoint(x: hub.x + CGFloat(cos(r)) * len * s,
+                                y: hub.y + CGFloat(sin(r)) * len * s), 7)
         }
+        let hr = 11.0 * s
+        NSBezierPath(ovalIn: NSRect(x: hub.x - hr, y: hub.y - hr, width: 2 * hr, height: 2 * hr)).fill()
+        stroke(hub, P(96, 150), 9)            // mast
+        stroke(P(96, 150), P(52, 182), 8)     // tripod legs
+        stroke(P(96, 150), P(96, 186), 8)
+        stroke(P(96, 150), P(140, 182), 8)
+        stroke(P(46, 184), P(58, 184), 8)     // feet
+        stroke(P(90, 188), P(102, 188), 8)
+        stroke(P(134, 184), P(146, 184), 8)
     }
 
     /// The mark tinted for in-app use (e.g. cream on the violet tile, or the
