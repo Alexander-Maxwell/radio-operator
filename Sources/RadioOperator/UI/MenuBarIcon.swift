@@ -23,13 +23,19 @@ enum MenuBarIcon {
         let size = NSSize(width: 18, height: 18)
         guard let art = antenna else { return NSImage(size: size) }
         let out = NSImage(size: size, flipped: false) { rect in
+            // Art is already black-on-transparent, so just draw it — no whole-rect
+            // fill. (The old fill()+destinationIn left black bars outside the fitted
+            // rect for a tall/narrow logo.) Template mode tints the shape for the bar;
+            // while capturing we paint it red via sourceAtop (red only over the art).
             let s = art.size
             let scale = min(rect.width / s.width, rect.height / s.height)
             let w = s.width * scale, h = s.height * scale
             let r = NSRect(x: (rect.width - w) / 2, y: (rect.height - h) / 2, width: w, height: h)
-            (capturing ? NSColor.systemRed : NSColor.black).setFill()
-            NSBezierPath(rect: rect).fill()
-            art.draw(in: r, from: .zero, operation: .destinationIn, fraction: 1)
+            art.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
+            if capturing {
+                NSColor.systemRed.setFill()
+                r.fill(using: .sourceAtop)
+            }
             return true
         }
         out.isTemplate = !capturing   // system tints it for the bar
