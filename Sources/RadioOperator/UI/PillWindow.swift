@@ -140,16 +140,12 @@ struct PillView: View {
                 TranscribingDots()
             }
         } else if isLive {
-            HStack(spacing: 12) {
-                OscilloWave(level: state.micLevel)
-                LCDTimer(start: recordingStart)
+            // Half size, baked into the components (no scaleEffect — that flashed
+            // back to full size on removal when the pill morphed away on release).
+            HStack(spacing: 6) {
+                OscilloWave(level: state.micLevel, scale: 0.5)
+                LCDTimer(start: recordingStart, scale: 0.5)
             }
-            // Half size. fixedSize lets the HStack lay out at its true 426×60 (so the
-            // timer isn't clamped/shoved out); scaleEffect keeps the exact oscilloscope
-            // look; the frame (half of 426×60) shrinks the footprint so the capsule hugs it.
-            .fixedSize()
-            .scaleEffect(0.5)
-            .frame(width: 213, height: 30)
         } else {
             // Ready — resting Morse pattern + label.
             HStack(spacing: 9) {
@@ -222,15 +218,22 @@ struct OscilloWave: View {
     let level: Float
     var width: CGFloat = 290
     var height: CGFloat = 60
+    /// Shrinks the footprint. The drawing stays in `width`×`height` design coords
+    /// (so every proportion is identical) and the Canvas transform scales it —
+    /// no view-level scaleEffect, so nothing animates back to full size on removal.
+    var scale: CGFloat = 1
 
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private let frameColor = Color(red: 0.60, green: 0.51, blue: 0.32).opacity(0.5)
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { tl in
-            Canvas { ctx, size in draw(ctx, size, t: tl.date.timeIntervalSinceReferenceDate) }
+            Canvas { ctx, size in
+                ctx.scaleBy(x: size.width / width, y: size.height / height)
+                draw(ctx, CGSize(width: width, height: height), t: tl.date.timeIntervalSinceReferenceDate)
+            }
         }
-        .frame(width: width, height: height)
+        .frame(width: width * scale, height: height * scale)
     }
 
     private func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double { a + (b - a) * t }
@@ -344,20 +347,21 @@ private struct TranscribingDots: View {
 /// second.
 private struct LCDTimer: View {
     let start: Date?
+    var scale: CGFloat = 1
     private let brass = Color(red: 0.82, green: 0.72, blue: 0.50)
     private let frameColor = Color(red: 0.60, green: 0.51, blue: 0.32).opacity(0.5)
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { context in
             Text(elapsed(to: context.date))
-                .font(Theme.mono(17, .medium))
-                .tracking(1)
+                .font(Theme.mono(17 * scale, .medium))
+                .tracking(1 * scale)
                 .foregroundStyle(brass)
                 .monospacedDigit()
-                .padding(.horizontal, 11).padding(.vertical, 9)
+                .padding(.horizontal, 11 * scale).padding(.vertical, 9 * scale)
                 .overlay(
                     Canvas { ctx, size in
-                        let a: CGFloat = 7
+                        let a: CGFloat = 7 * scale
                         for cx in [CGFloat(0), size.width] {
                             for cy in [CGFloat(0), size.height] {
                                 let sx: CGFloat = cx == 0 ? 1 : -1, sy: CGFloat = cy == 0 ? 1 : -1
