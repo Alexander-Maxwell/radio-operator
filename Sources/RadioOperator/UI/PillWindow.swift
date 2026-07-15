@@ -144,8 +144,10 @@ struct PillView: View {
                 OscilloWave(level: state.micLevel)
                 LCDTimer(start: recordingStart)
             }
-            // Half size. scaleEffect keeps the exact oscilloscope look; the frame
-            // (half the natural 426×60) shrinks the footprint so the capsule hugs it.
+            // Half size. fixedSize lets the HStack lay out at its true 426×60 (so the
+            // timer isn't clamped/shoved out); scaleEffect keeps the exact oscilloscope
+            // look; the frame (half of 426×60) shrinks the footprint so the capsule hugs it.
+            .fixedSize()
             .scaleEffect(0.5)
             .frame(width: 213, height: 30)
         } else {
