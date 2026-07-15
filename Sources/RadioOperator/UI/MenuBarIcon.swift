@@ -20,19 +20,42 @@ enum MenuBarIcon {
     /// The menu-bar glyph. Template (system-tinted) at rest, solid red while
     /// capturing — keeping the load-bearing "red = live microphone" rule.
     static func image(capturing: Bool) -> NSImage {
-        // A native SF Symbol: crisp at 18pt (the detailed operator art only
-        // reads at Dock size, so it stays on the app icon). Template = the
-        // system tints it for the bar; red while capturing.
-        let cfg = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        let sym = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right",
-                          accessibilityDescription: "Radio Operator")?
-            .withSymbolConfiguration(cfg) ?? NSImage(size: NSSize(width: 18, height: 18))
-        guard capturing else { sym.isTemplate = true; return sym }
-        return NSImage(size: sym.size, flipped: false) { rect in
-            NSColor.systemRed.setFill()
-            NSBezierPath(rect: rect).fill()
-            sym.draw(in: rect, from: .zero, operation: .destinationIn, fraction: 1)
+        let out = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            drawDish(in: rect, color: capturing ? .systemRed : .black)
             return true
+        }
+        out.isTemplate = !capturing   // system tints it for the bar
+        return out
+    }
+
+    /// A SATCOM dish aimed at the sky: filled parabolic reflector on a pedestal,
+    /// feed horn on an arm, three uplink waves. Reads at the 36px Retina menu-bar
+    /// size. Drawn on a 200×200 grid (y-down) mapped to `rect`.
+    static func drawDish(in rect: NSRect, color: NSColor) {
+        color.set()
+        let s = min(rect.width, rect.height) / 200
+        func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+            NSPoint(x: rect.minX + x * s, y: rect.maxY - y * s)
+        }
+        func stroke(_ a: NSPoint, _ b: NSPoint, _ w: CGFloat) {
+            let p = NSBezierPath(); p.move(to: a); p.line(to: b)
+            p.lineWidth = w * s; p.lineCapStyle = .round; p.stroke()
+        }
+        // Reflector (filled bowl, opening up).
+        let dish = NSBezierPath()
+        dish.appendArc(withCenter: P(90, 66), radius: 80 * s, startAngle: 200, endAngle: 340, clockwise: false)
+        dish.appendArc(withCenter: P(90, 66), radius: 58 * s, startAngle: 340, endAngle: 200, clockwise: true)
+        dish.close(); dish.fill()
+        stroke(P(90, 126), P(90, 172), 14)   // pedestal
+        stroke(P(66, 176), P(114, 176), 14)  // foot
+        let fc = P(126, 46)
+        stroke(P(120, 96), fc, 8)            // feed arm
+        let fh = 10.0 * s
+        NSBezierPath(ovalIn: NSRect(x: fc.x - fh, y: fc.y - fh, width: 2 * fh, height: 2 * fh)).fill()  // horn
+        for rad in [26.0, 42.0, 58.0] {      // uplink waves
+            let w = NSBezierPath()
+            w.appendArc(withCenter: fc, radius: rad * s, startAngle: -8, endAngle: 58, clockwise: false)
+            w.lineWidth = 7 * s; w.lineCapStyle = .round; w.stroke()
         }
     }
 
