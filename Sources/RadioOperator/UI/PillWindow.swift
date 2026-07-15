@@ -105,8 +105,10 @@ struct PillView: View {
                 )
                 .shadow(color: .black.opacity(0.45), radius: 12, y: 6)
                 .shadow(color: Palette.mark.opacity(isLive ? 0.16 : 0), radius: 9)
-                // Full size (the oscilloscope look). No cross-state animation, so
-                // state swaps snap cleanly with no cross-fade ghost on release.
+                // Half size, applied to the whole (always-present) pill so EVERY
+                // state scales together — no small→full snap, no old-pill-behind,
+                // and no cross-state animation means no cross-fade ghost on release.
+                .scaleEffect(0.5, anchor: .bottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 3)
