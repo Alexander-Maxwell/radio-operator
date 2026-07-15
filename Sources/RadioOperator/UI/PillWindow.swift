@@ -105,13 +105,8 @@ struct PillView: View {
                 )
                 .shadow(color: .black.opacity(0.45), radius: 12, y: 6)
                 .shadow(color: Palette.mark.opacity(isLive ? 0.16 : 0), radius: 9)
-                // Half size for EVERY state (recording, transcribing, saved, ready),
-                // so the pill never snaps from small→full on release (the full-size
-                // transcribing/saved states read as an "old pill" behind the small
-                // one). scaleEffect sits on the always-present container — not a
-                // conditional branch — so nothing animates back to full size on swap.
-                .scaleEffect(0.5, anchor: .bottom)
-                // No cross-state animation: state swaps snap, no cross-fade ghost.
+                // Full size (the oscilloscope look). No cross-state animation, so
+                // state swaps snap cleanly with no cross-fade ghost on release.
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, 3)
