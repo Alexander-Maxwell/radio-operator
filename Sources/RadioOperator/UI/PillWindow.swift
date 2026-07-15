@@ -140,9 +140,9 @@ struct PillView: View {
                 TranscribingDots()
             }
         } else if isLive {
-            HStack(spacing: 11) {
-                MorseMeter(level: state.micLevel)
-                TimerLabel(start: recordingStart)
+            HStack(spacing: 12) {
+                OscilloWave(level: state.micLevel)
+                LCDTimer(start: recordingStart)
             }
         } else {
             // Ready — resting Morse pattern + label.
@@ -207,57 +207,91 @@ private struct MorseMark: View {
     }
 }
 
-// MARK: - Morse meter (recording)
+// MARK: - Oscilloscope waveform (recording)
 
-/// The recording meter that literally spells in Morse: a row of vertical bars
-/// whose WIDTHS encode dashes (wide) and dots (narrow) — the pattern reads
-/// R·−· O−−− R·−· — and whose HEIGHTS ride the live input level. Drifts subtly
-/// so it feels alive; static under Reduce Motion.
-private struct MorseMeter: View {
+/// A tactical oscilloscope: a dense field of fine brass striations forming a
+/// center-weighted audio waveform with a hot core glow, framed by a tick ruler,
+/// corner brackets, and centering chevrons. Rides the live mic level.
+struct OscilloWave: View {
     let level: Float
-    var height: CGFloat = 24
+    var width: CGFloat = 290
+    var height: CGFloat = 60
 
-    private var reduceMotion: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }
-
-    // true = dash (wide bar), false = dot (narrow bar). R O R.
-    private let pattern: [Bool] = [false, true, false, true, true, true, false, true, false]
-    private let dotW: CGFloat = 5.5
-    private let dashW: CGFloat = 12
-    private let gap: CGFloat = 5
-
-    private var totalWidth: CGFloat {
-        pattern.reduce(0) { $0 + ($1 ? dashW : dotW) } + gap * CGFloat(pattern.count - 1)
-    }
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private let frameColor = Color(red: 0.60, green: 0.51, blue: 0.32).opacity(0.5)
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { tl in
-            Canvas { ctx, size in
-                draw(ctx, size, t: tl.date.timeIntervalSinceReferenceDate)
-            }
+            Canvas { ctx, size in draw(ctx, size, t: tl.date.timeIntervalSinceReferenceDate) }
         }
-        .frame(width: totalWidth, height: height)
+        .frame(width: width, height: height)
     }
 
-    /// Taller in the middle, shorter at the ends.
-    private func centerWeight(_ i: Int) -> CGFloat {
-        let x = Double(i) / Double(max(1, pattern.count - 1))
-        return CGFloat(0.5 + 0.5 * sin(.pi * x))
+    private func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double { a + (b - a) * t }
+    /// Dim brass → brass → hot cream, by heat 0…1.
+    private func brass(_ heat: Double) -> Color {
+        let h = max(0, min(1, heat))
+        if h < 0.5 { let u = h / 0.5
+            return Color(red: lerp(0.40, 0.74, u), green: lerp(0.34, 0.62, u), blue: lerp(0.19, 0.41, u)) }
+        let u = (h - 0.5) / 0.5
+        return Color(red: lerp(0.74, 0.99, u), green: lerp(0.62, 0.94, u), blue: lerp(0.41, 0.80, u))
+    }
+    /// Center-weighted envelope with speech-like humps.
+    private func env(_ x: Double) -> Double {
+        exp(-pow((x - 0.5) / 0.30, 2)) * (0.5 + 0.5 * pow(abs(sin(x * 15)), 1.3))
     }
 
     private func draw(_ ctx: GraphicsContext, _ size: CGSize, t: Double) {
-        let lvl = CGFloat(max(0.14, min(1, level)))
-        let base: CGFloat = 4
-        var x: CGFloat = 0
-        for (i, isDash) in pattern.enumerated() {
-            let w = isDash ? dashW : dotW
-            let shimmer = reduceMotion ? 1 : (0.78 + 0.22 * sin(t * 4 + Double(i) * 0.9))
-            let h = min(size.height, base + centerWeight(i) * lvl * (size.height - base) * CGFloat(shimmer))
-            let rect = CGRect(x: x, y: (size.height - h) / 2, width: w, height: h)
-            ctx.fill(Path(roundedRect: rect, cornerRadius: min(w, h) / 2), with: .color(Palette.mark))
-            x += w + gap
+        let W = size.width, H = size.height, mid = H / 2
+        let inset: CGFloat = 22
+        drawRuler(ctx, W, H, inset: inset)
+        drawBrackets(ctx, W, H, inset: inset)
+        drawChevrons(ctx, W / 2, H)
+
+        let lvl = Double(max(0.12, min(1, level)))
+        let waveW = W - inset * 2
+        let n = 120
+        for i in 0..<n {
+            let fx = Double(i) / Double(n - 1)
+            let x = inset + CGFloat(fx) * waveW
+            let e = env(fx)
+            let detail = 0.30 + 0.70 * abs(sin(Double(i) * 0.63 + t * 6.5) * cos(Double(i) * 0.29 - t * 3.7))
+            let a = CGFloat(e * detail * lvl) * (H * 0.44)
+            var p = Path(); p.move(to: CGPoint(x: x, y: mid - a)); p.addLine(to: CGPoint(x: x, y: mid + a))
+            ctx.stroke(p, with: .color(brass(min(1, e * 1.25)).opacity(0.9)), lineWidth: 1.3)
         }
+        ctx.fill(Path(ellipseIn: CGRect(x: W / 2 - 46, y: mid - 26, width: 92, height: 52)),
+                 with: .radialGradient(Gradient(colors: [brass(1).opacity(0.30), .clear]),
+                                       center: CGPoint(x: W / 2, y: mid), startRadius: 1, endRadius: 46))
+    }
+
+    private func drawRuler(_ ctx: GraphicsContext, _ W: CGFloat, _ H: CGFloat, inset: CGFloat) {
+        let count = 56
+        for (yy, dir) in [(CGFloat(6), CGFloat(1)), (H - 6, CGFloat(-1))] {
+            for i in 0...count {
+                let x = inset - 4 + (W - inset * 2 + 8) * CGFloat(i) / CGFloat(count)
+                let long = i % 5 == 0
+                var p = Path(); p.move(to: CGPoint(x: x, y: yy)); p.addLine(to: CGPoint(x: x, y: yy + dir * (long ? 8 : 4)))
+                ctx.stroke(p, with: .color(frameColor.opacity(long ? 0.7 : 0.38)), lineWidth: 1)
+            }
+        }
+    }
+
+    private func drawBrackets(_ ctx: GraphicsContext, _ W: CGFloat, _ H: CGFloat, inset: CGFloat) {
+        let armW: CGFloat = 8, top = H * 0.22, bot = H * 0.78
+        for (x, sgn) in [(inset, CGFloat(1)), (W - inset, CGFloat(-1))] {
+            var p = Path()
+            p.move(to: CGPoint(x: x + sgn * armW, y: top)); p.addLine(to: CGPoint(x: x, y: top))
+            p.addLine(to: CGPoint(x: x, y: bot)); p.addLine(to: CGPoint(x: x + sgn * armW, y: bot))
+            ctx.stroke(p, with: .color(frameColor), lineWidth: 1.6)
+        }
+    }
+
+    private func drawChevrons(_ ctx: GraphicsContext, _ cx: CGFloat, _ H: CGFloat) {
+        let w: CGFloat = 7, h: CGFloat = 5
+        var top = Path(); top.move(to: CGPoint(x: cx - w, y: 2)); top.addLine(to: CGPoint(x: cx, y: 2 + h)); top.addLine(to: CGPoint(x: cx + w, y: 2))
+        var bot = Path(); bot.move(to: CGPoint(x: cx - w, y: H - 2)); bot.addLine(to: CGPoint(x: cx, y: H - 2 - h)); bot.addLine(to: CGPoint(x: cx + w, y: H - 2))
+        for p in [top, bot] { ctx.stroke(p, with: .color(frameColor.opacity(0.8)), lineWidth: 1.6) }
     }
 }
 
@@ -300,17 +334,36 @@ private struct TranscribingDots: View {
 
 // MARK: - Timer
 
-/// Mono elapsed clock (`0:14`), ticking twice a second.
-private struct TimerLabel: View {
+/// Brass LCD elapsed clock (`0:14`) in a corner-bracket frame, ticking twice a
+/// second.
+private struct LCDTimer: View {
     let start: Date?
+    private let brass = Color(red: 0.82, green: 0.72, blue: 0.50)
+    private let frameColor = Color(red: 0.60, green: 0.51, blue: 0.32).opacity(0.5)
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { context in
             Text(elapsed(to: context.date))
-                .font(Theme.mono(11.5, .medium))
-                .tracking(0.5)
-                .foregroundStyle(Palette.pillMeta)
+                .font(Theme.mono(17, .medium))
+                .tracking(1)
+                .foregroundStyle(brass)
                 .monospacedDigit()
+                .padding(.horizontal, 11).padding(.vertical, 9)
+                .overlay(
+                    Canvas { ctx, size in
+                        let a: CGFloat = 7
+                        for cx in [CGFloat(0), size.width] {
+                            for cy in [CGFloat(0), size.height] {
+                                let sx: CGFloat = cx == 0 ? 1 : -1, sy: CGFloat = cy == 0 ? 1 : -1
+                                var p = Path()
+                                p.move(to: CGPoint(x: cx + sx * a, y: cy))
+                                p.addLine(to: CGPoint(x: cx, y: cy))
+                                p.addLine(to: CGPoint(x: cx, y: cy + sy * a))
+                                ctx.stroke(p, with: .color(frameColor), lineWidth: 1.6)
+                            }
+                        }
+                    }
+                )
         }
     }
 
