@@ -20,45 +20,31 @@ enum MenuBarIcon {
     /// The menu-bar glyph. Template (system-tinted) at rest, solid red while
     /// capturing — keeping the load-bearing "red = live microphone" rule.
     static func image(capturing: Bool) -> NSImage {
-        let out = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-            drawAntenna(in: rect, color: capturing ? .systemRed : .black)
+        let size = NSSize(width: 18, height: 18)
+        guard let art = antenna else { return NSImage(size: size) }
+        let out = NSImage(size: size, flipped: false) { rect in
+            let s = art.size
+            let scale = min(rect.width / s.width, rect.height / s.height)
+            let w = s.width * scale, h = s.height * scale
+            let r = NSRect(x: (rect.width - w) / 2, y: (rect.height - h) / 2, width: w, height: h)
+            (capturing ? NSColor.systemRed : NSColor.black).setFill()
+            NSBezierPath(rect: rect).fill()
+            art.draw(in: r, from: .zero, operation: .destinationIn, fraction: 1)
             return true
         }
         out.isTemplate = !capturing   // system tints it for the bar
         return out
     }
 
-    /// The SATCOM star-burst antenna: radial elements from a hub on a tripod
-    /// (the operator's field antenna). Reads at the 36px Retina menu-bar size.
-    /// Drawn on a 200×200 grid (y-down) mapped to `rect`.
-    static func drawAntenna(in rect: NSRect, color: NSColor) {
-        color.set()
-        let s = min(rect.width, rect.height) / 200
-        func P(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-            NSPoint(x: rect.minX + x * s, y: rect.maxY - y * s)
-        }
-        func stroke(_ a: NSPoint, _ b: NSPoint, _ w: CGFloat) {
-            let p = NSBezierPath(); p.move(to: a); p.line(to: b)
-            p.lineWidth = w * s; p.lineCapStyle = .round; p.stroke()
-        }
-        let hub = P(96, 78)
-        // Radial antenna elements (angle°, length) — the "burst".
-        let spokes: [(Double, Double)] = [(12,60),(40,68),(66,58),(92,70),(118,60),(146,66),(172,56),(198,52),(-18,54)]
-        for (ang, len) in spokes {
-            let r = ang * .pi / 180
-            stroke(hub, NSPoint(x: hub.x + CGFloat(cos(r)) * len * s,
-                                y: hub.y + CGFloat(sin(r)) * len * s), 7)
-        }
-        let hr = 11.0 * s
-        NSBezierPath(ovalIn: NSRect(x: hub.x - hr, y: hub.y - hr, width: 2 * hr, height: 2 * hr)).fill()
-        stroke(hub, P(96, 150), 9)            // mast
-        stroke(P(96, 150), P(52, 182), 8)     // tripod legs
-        stroke(P(96, 150), P(96, 186), 8)
-        stroke(P(96, 150), P(140, 182), 8)
-        stroke(P(46, 184), P(58, 184), 8)     // feet
-        stroke(P(90, 188), P(102, 188), 8)
-        stroke(P(134, 184), P(146, 184), 8)
-    }
+    /// The SATCOM antenna art (black on transparent), from the app bundle or the
+    /// repo checkout for debug builds.
+    private static let antenna: NSImage? = {
+        if let url = Bundle.main.url(forResource: "operator-silhouette", withExtension: "png"),
+           let img = NSImage(contentsOf: url) { return img }
+        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let repo = exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return NSImage(contentsOf: repo.appendingPathComponent("resources/operator-silhouette.png"))
+    }()
 
     /// The mark tinted for in-app use (e.g. cream on the violet tile, or the
     /// pill). Not a template.
