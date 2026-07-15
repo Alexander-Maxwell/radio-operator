@@ -144,6 +144,10 @@ struct PillView: View {
                 OscilloWave(level: state.micLevel)
                 LCDTimer(start: recordingStart)
             }
+            // Half size. scaleEffect keeps the exact oscilloscope look; the frame
+            // (half the natural 426×60) shrinks the footprint so the capsule hugs it.
+            .scaleEffect(0.5)
+            .frame(width: 213, height: 30)
         } else {
             // Ready — resting Morse pattern + label.
             HStack(spacing: 9) {
