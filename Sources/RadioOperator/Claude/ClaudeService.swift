@@ -298,12 +298,54 @@ final class ClaudeService: @unchecked Sendable {
     /// cleanup instead (this pass may only ever improve, never block).
     func correctDictation(_ text: String, vocabulary: [String]) async throws -> String {
         let prompt = ClaudeService.correctionPrompt(text: text, vocabulary: vocabulary)
-        // 12s, not 30: past that the user is staring at a stuck paste — the
-        // deterministic fallback is better than a perfect answer that late.
-        let out = try await run(prompt: prompt, timeout: 12)
+        // Fast path: a stored Groq key makes correction one direct HTTPS call
+        // (~0.5s) instead of a CLI spawn (~4–8s). On Groq failure we THROW —
+        // the caller pastes the deterministic cleanup instantly; falling back
+        // to the slow CLI here would reintroduce the exact wait the key exists
+        // to remove.
+        let groqKey = await MainActor.run { SettingsStore.shared.groqKey }
+        let out: String
+        if let groqKey {
+            out = try await runGroq(prompt: prompt, key: groqKey)
+        } else {
+            // 12s, not 30: past that the user is staring at a stuck paste — the
+            // deterministic fallback is better than a perfect answer that late.
+            out = try await run(prompt: prompt, timeout: 12)
+        }
         let stripped = ClaudeService.stripFences(out)
         guard !stripped.isEmpty else { throw ClaudeError.noOutput }
         return stripped
+    }
+
+    /// One direct call to Groq's OpenAI-compatible endpoint. Llama 3.3 70B
+    /// handles near-homophone repair well and typically returns in well under
+    /// a second — dictation-grade latency is the whole point of this path.
+    private func runGroq(prompt: String, key: String) async throws -> String {
+        var request = URLRequest(url: URL(string: "https://api.groq.com/openai/v1/chat/completions")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 8
+        let body: [String: Any] = [
+            "model": "llama-3.3-70b-versatile",
+            "temperature": 0,
+            "max_tokens": 2048,
+            "messages": [["role": "user", "content": prompt]],
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw ClaudeError.apiError("no response") }
+        guard http.statusCode == 200 else {
+            let msg = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
+            throw ClaudeError.apiError(String(msg.prefix(300)))
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let content = message["content"] as? String
+        else { throw ClaudeError.noOutput }
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Builds the smart-correction prompt. Pure and nonisolated so it is unit

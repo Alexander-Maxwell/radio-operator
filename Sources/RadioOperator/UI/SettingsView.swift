@@ -125,6 +125,7 @@ struct DictationPane: View {
     @State private var previewRaw =
         "so um, i think we should, like, launch the sip program on monday. new line follow up with the bevmo vendor and, you know, confirm gopuff pricing"
     @State private var inputDevices: [AudioInputDevices.Device] = []
+    @State private var groqKeyDraft = ""
 
     private var cleaned: String { CleanupEngine.clean(previewRaw, settings: settings.data) }
 
@@ -173,9 +174,17 @@ struct DictationPane: View {
                     Toggle("", isOn: $settings.data.phoneticMatching).labelsHidden()
                 }
                 cardDivider()
-                SettingRow(title: "Smart correction (Claude)",
+                SettingRow(title: "Smart correction",
                            desc: "Repairs misrecognized words using context and your dictionary after each dictation. Adds a moment before pasting; falls back to standard cleanup on any failure.") {
                     Toggle("", isOn: $settings.data.smartCorrection).labelsHidden()
+                }
+                cardDivider()
+                SettingRow(title: "Groq API key (speed)",
+                           desc: "Optional. A free key from console.groq.com makes smart correction one ~0.5s call instead of a multi-second Claude CLI spawn. Stored in your Keychain; press Return to save.") {
+                    SecureField("gsk_…", text: $groqKeyDraft)
+                        .textFieldStyle(.roundedBorder).frame(width: 220)
+                        .onSubmit { settings.groqKey = groqKeyDraft.isEmpty ? nil : groqKeyDraft }
+                        .onAppear { groqKeyDraft = settings.groqKey ?? "" }
                 }
             }
 

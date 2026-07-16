@@ -536,4 +536,41 @@ final class SettingsStore: ObservableObject {
             objectWillChange.send()
         }
     }
+
+    // MARK: - Groq API key (Keychain) — smart-correction fast path
+
+    private static let groqKeychainAccount = "groq-api-key"
+
+    var groqKey: String? {
+        get {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: SettingsStore.keychainService,
+                kSecAttrAccount as String: SettingsStore.groqKeychainAccount,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+            ]
+            var item: CFTypeRef?
+            guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+                  let data = item as? Data,
+                  let key = String(data: data, encoding: .utf8), !key.isEmpty else { return nil }
+            return key
+        }
+        set {
+            let base: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: SettingsStore.keychainService,
+                kSecAttrAccount as String: SettingsStore.groqKeychainAccount,
+            ]
+            SecItemDelete(base as CFDictionary)
+            guard let newValue, !newValue.isEmpty else {
+                objectWillChange.send()
+                return
+            }
+            var add = base
+            add[kSecValueData as String] = Data(newValue.utf8)
+            SecItemAdd(add as CFDictionary, nil)
+            objectWillChange.send()
+        }
+    }
 }
