@@ -183,7 +183,11 @@ struct DictationPane: View {
                            desc: "Optional. A free key from console.groq.com makes smart correction one ~0.5s call instead of a multi-second Claude CLI spawn, and unlocks Whisper transcription below. Stored in your Keychain; press Return to save.") {
                     SecureField("gsk_…", text: $groqKeyDraft)
                         .textFieldStyle(.roundedBorder).frame(width: 220)
-                        .onSubmit { settings.groqKey = groqKeyDraft.isEmpty ? nil : groqKeyDraft }
+                        // Save on every change (paste included) — an onSubmit-only
+                        // save silently loses the key when the user clicks away.
+                        .onChange(of: groqKeyDraft) { _, v in
+                            settings.groqKey = v.isEmpty ? nil : v
+                        }
                         .onAppear { groqKeyDraft = settings.groqKey ?? "" }
                 }
                 cardDivider()

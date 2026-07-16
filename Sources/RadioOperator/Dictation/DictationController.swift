@@ -273,23 +273,28 @@ final class DictationController {
 
         Task { [weak self] in
             guard let self else { return }
-            let completed = await transcriber?.finishAndWait(timeout: 3.0) ?? false
             // Whisper final pass (lever 4): send the session's mic audio to
             // Groq-hosted Whisper — markedly more robust to atypical speech —
             // and prefer its transcript. Apple's transcript (already assembled
             // in `finals`) is the fallback on ANY failure, so this can only
-            // improve recognition, never lose a dictation.
+            // improve recognition, never lose a dictation. Kicked off BEFORE
+            // Apple's finalize so the two waits overlap instead of stacking
+            // (the mic is already unsubscribed, so the tap is complete).
             let (whisperOn, groqKey, vocabulary) = await MainActor.run { () -> (Bool, String?, [String]) in
                 let d = SettingsStore.shared.data
                 return (d.whisperTranscription, SettingsStore.shared.groqKey,
                         d.dictionary.map(\.written))
             }
-            var whisperRaw: String?
+            var whisperTask: Task<String?, Never>?
             if whisperOn, let groqKey, let tap, tap.duration >= 0.4,
                let wav = tap.wavData() {
-                whisperRaw = try? await GroqWhisper.transcribe(
-                    wav: wav, key: groqKey, vocabulary: vocabulary)
+                whisperTask = Task {
+                    try? await GroqWhisper.transcribe(wav: wav, key: groqKey,
+                                                      vocabulary: vocabulary)
+                }
             }
+            let completed = await transcriber?.finishAndWait(timeout: 3.0) ?? false
+            let whisperRaw = await whisperTask?.value
             await MainActor.run {
                 guard self.state == .stopping else { return }
                 let appleRaw = self.finals.joined(separator: " ")
