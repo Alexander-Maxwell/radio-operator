@@ -298,7 +298,9 @@ final class ClaudeService: @unchecked Sendable {
     /// cleanup instead (this pass may only ever improve, never block).
     func correctDictation(_ text: String, vocabulary: [String]) async throws -> String {
         let prompt = ClaudeService.correctionPrompt(text: text, vocabulary: vocabulary)
-        let out = try await run(prompt: prompt, timeout: 30)
+        // 12s, not 30: past that the user is staring at a stuck paste — the
+        // deterministic fallback is better than a perfect answer that late.
+        let out = try await run(prompt: prompt, timeout: 12)
         let stripped = ClaudeService.stripFences(out)
         guard !stripped.isEmpty else { throw ClaudeError.noOutput }
         return stripped
@@ -552,7 +554,10 @@ final class ClaudeService: @unchecked Sendable {
             try await withCheckedThrowingContinuation { continuation in
             let proc = box.proc
             proc.executableURL = URL(fileURLWithPath: cli)
-            var args = ["-p", "--model", model, "--output-format", "text"]
+            // --strict-mcp-config: never load the user's MCP servers/plugins for
+            // these one-shot text transforms — they cost seconds of spawn time
+            // per call and RO only ever needs the built-in Read/Grep/Glob tools.
+            var args = ["-p", "--model", model, "--output-format", "text", "--strict-mcp-config"]
             if let allowedTools {
                 args += ["--allowedTools", allowedTools]
             }
