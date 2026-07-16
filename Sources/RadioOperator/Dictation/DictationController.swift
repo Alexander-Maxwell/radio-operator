@@ -285,22 +285,40 @@ final class DictationController {
                 }
 
                 self.state = .idle
-                AppState.shared.dictationPhase = .pasting
                 let target = self.target ?? self.paste.captureTarget()
-                let text = SettingsStore.shared.data.smartLeadingSpace
-                    ? SmartSpace.merged(cleaned, needsSpace: SmartSpace.needsLeadingSpace(target: target))
-                    : cleaned
                 Task { @MainActor in
+                    // Smart correction: Claude repairs ASR mishears using the
+                    // user's dictionary as vocabulary — the heavy lever for a
+                    // speech impediment the deterministic rules can't reach.
+                    // Fallback on ANY failure is the deterministic cleanup: this
+                    // pass may improve the text, never lose it. The pill stays on
+                    // "Transcribing" while it runs; .pasting flips only after.
+                    var finalText = cleaned
+                    let settingsData = SettingsStore.shared.data
+                    if settingsData.smartCorrection, !cleaned.isEmpty {
+                        let vocabulary = settingsData.dictionary.map(\.written)
+                        if let corrected = try? await ClaudeService.shared.correctDictation(
+                               finalText, vocabulary: vocabulary),
+                           !corrected.isEmpty {
+                            finalText = corrected
+                        }
+                    }
+                    AppState.shared.dictationPhase = .pasting
+                    let text = settingsData.smartLeadingSpace
+                        ? SmartSpace.merged(finalText, needsSpace: SmartSpace.needsLeadingSpace(target: target))
+                        : finalText
                     let outcome = await self.paste.paste(text, target: target)
                     let pasteOK = outcome == .pasted
                     let retention = SettingsStore.shared.data.historyRetention
                     if retention != .never {
+                        // raw → finalText pairs are the heard→meant dataset a
+                        // future personalized (fine-tuned) model trains on.
                         HistoryStore.shared.record(
-                            raw: raw, cleaned: cleaned,
+                            raw: raw, cleaned: finalText,
                             appBundleID: target.bundleID,
                             durationMs: durationMs, pasteOK: pasteOK)
                         // Markdown mirror so Ask's CLI grep can see dictations.
-                        NotesStore.shared.appendDictation(text: cleaned, appName: target.bundleID)
+                        NotesStore.shared.appendDictation(text: finalText, appName: target.bundleID)
                         if retention == .day {
                             HistoryStore.shared.prune(olderThan: Date(timeIntervalSinceNow: -86_400))
                             NotesStore.pruneDictationLogs(

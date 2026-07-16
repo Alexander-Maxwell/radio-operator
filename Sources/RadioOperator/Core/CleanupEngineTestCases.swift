@@ -55,6 +55,57 @@ enum CleanupEngineTestCases {
             t.expectEqual(CleanupEngine.normalize(""), "", "normalize empty")
         }
 
+        // MARK: - Phonetic matching
+
+        t.test("soundex known values") { t in
+            t.expectEqual(CleanupEngine.soundex("robert"), "R163", "robert")
+            t.expectEqual(CleanupEngine.soundex("rupert"), "R163", "rupert = robert code")
+            t.expectEqual(CleanupEngine.soundex("tymczak"), "T522", "tymczak")
+            t.expectEqual(CleanupEngine.soundex("pfister"), "P236", "pfister (same-code first letter)")
+            t.expectEqual(CleanupEngine.soundex("honeyman"), "H555", "honeyman (vowel resets run)")
+            t.expectEqual(CleanupEngine.soundex(""), "", "empty word")
+        }
+
+        t.test("levenshtein basics") { t in
+            t.expectEqual(CleanupEngine.levenshtein("kitten", "sitting"), 3, "kitten/sitting")
+            t.expectEqual(CleanupEngine.levenshtein("abc", "abc"), 0, "equal")
+            t.expectEqual(CleanupEngine.levenshtein("", "abc"), 3, "empty vs word")
+        }
+
+        t.test("phonetic pass corrects a near-mishear of a dictionary word") { t in
+            let entries = [DictionaryEntry(spoken: "sonoma", written: "Sonoma")]
+            t.expectEqual(
+                CleanupEngine.applyPhoneticDictionary("we drove to sanoma yesterday", entries: entries),
+                "we drove to Sonoma yesterday", "same soundex + 1 edit → corrected")
+        }
+
+        t.test("phonetic pass leaves unrelated and already-correct words alone") { t in
+            let entries = [DictionaryEntry(spoken: "sonoma", written: "Sonoma")]
+            t.expectEqual(CleanupEngine.applyPhoneticDictionary("the sun is warm", entries: entries),
+                          "the sun is warm", "different soundex untouched")
+            t.expectEqual(CleanupEngine.applyPhoneticDictionary("Sonoma is nice", entries: entries),
+                          "Sonoma is nice", "already the written form")
+            t.expectEqual(CleanupEngine.applyPhoneticDictionary("summon the team", entries: entries),
+                          "summon the team", "same-ish sound but 2+ edits on short word")
+        }
+
+        t.test("phonetic pass capitalizes at sentence start") { t in
+            let entries = [DictionaryEntry(spoken: "gopuff", written: "gopuff.com")]
+            t.expectEqual(CleanupEngine.applyPhoneticDictionary("gopoff is down", entries: entries),
+                          "Gopuff.com is down", "lowercase written capitalized at start")
+        }
+
+        t.test("phonetic matching gate in clean()") { t in
+            var settings = makeSettings(
+                dictionary: [DictionaryEntry(spoken: "sonoma", written: "Sonoma")])
+            settings.phoneticMatching = true
+            t.expectEqual(CleanupEngine.clean("we drove to sanoma", settings: settings),
+                          "We drove to Sonoma", "on: mishear corrected")
+            settings.phoneticMatching = false
+            t.expectEqual(CleanupEngine.clean("we drove to sanoma", settings: settings),
+                          "We drove to sanoma", "off: left as heard")
+        }
+
         // MARK: - Dictionary
 
         t.test("dictionary replaces at every sentence start") { t in

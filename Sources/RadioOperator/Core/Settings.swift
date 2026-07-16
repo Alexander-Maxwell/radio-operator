@@ -197,6 +197,18 @@ struct SettingsData: Codable, Sendable {
     var claudeCLIModel: String = "sonnet"
     var apiModel: String = "claude-haiku-4-5"
     var smartLeadingSpace: Bool = true
+    /// Deterministic phonetic matching against your dictionary: a word the ASR
+    /// misheard into a near-homophone of one of your `spoken` terms is corrected
+    /// to the `written` form, offline and instantly. Conservative (same Soundex
+    /// AND small edit distance), so it only fires on your own vocabulary. ON by
+    /// default — it can only ever produce words you asked for.
+    var phoneticMatching: Bool = true
+    /// Optional LLM repair pass over the finished transcript: reconstructs
+    /// intended words from phonetic/ASR errors using your dictionary as context.
+    /// The single biggest lever for atypical speech. Adds ~0.5–1.5s and sends the
+    /// transcript to Claude (CLI/your subscription), so it is a toggle — but ON by
+    /// default because recognizing your words is the whole point.
+    var smartCorrection: Bool = true
     var hasCompletedOnboarding: Bool = false
     var echoGuardMode: EchoGuardMode = .auto
     var autoSummarize: Bool = true
@@ -349,7 +361,7 @@ struct SettingsData: Codable, Sendable {
         case holdHotkey, cleanupLevel, dictionary, snippets, notesFolderPath
         case audioFolderPath
         case retainAudio, claudeMode, claudeCLIModel, apiModel
-        case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
+        case smartLeadingSpace, phoneticMatching, smartCorrection, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
         case autoSummarize, appearance, summaryTemplates, selectedTemplateID
         case appRules, applyStyleToSummaries
@@ -377,6 +389,8 @@ struct SettingsData: Codable, Sendable {
         claudeCLIModel = (try? c.decodeIfPresent(String.self, forKey: .claudeCLIModel)) ?? d.claudeCLIModel
         apiModel = (try? c.decodeIfPresent(String.self, forKey: .apiModel)) ?? d.apiModel
         smartLeadingSpace = (try? c.decodeIfPresent(Bool.self, forKey: .smartLeadingSpace)) ?? d.smartLeadingSpace
+        phoneticMatching = (try? c.decodeIfPresent(Bool.self, forKey: .phoneticMatching)) ?? d.phoneticMatching
+        smartCorrection = (try? c.decodeIfPresent(Bool.self, forKey: .smartCorrection)) ?? d.smartCorrection
         hasCompletedOnboarding = (try? c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)) ?? d.hasCompletedOnboarding
         echoGuardMode = (try? c.decodeIfPresent(EchoGuardMode.self, forKey: .echoGuardMode)) ?? d.echoGuardMode
         micDeviceUID = (try? c.decodeIfPresent(String.self, forKey: .micDeviceUID)) ?? d.micDeviceUID

@@ -167,6 +167,16 @@ struct DictationPane: View {
                     }
                     .labelsHidden().frame(maxWidth: 280)
                 }
+                cardDivider()
+                SettingRow(title: "Phonetic dictionary matching",
+                           desc: "Corrects near-mishears of your dictionary words offline (same sound + close spelling). Only ever produces words from your dictionary.") {
+                    Toggle("", isOn: $settings.data.phoneticMatching).labelsHidden()
+                }
+                cardDivider()
+                SettingRow(title: "Smart correction (Claude)",
+                           desc: "Repairs misrecognized words using context and your dictionary after each dictation. Adds a moment before pasting; falls back to standard cleanup on any failure.") {
+                    Toggle("", isOn: $settings.data.smartCorrection).labelsHidden()
+                }
             }
 
             Card(title: "Hold-to-talk") {
