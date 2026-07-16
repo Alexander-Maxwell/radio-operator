@@ -125,7 +125,6 @@ struct DictationPane: View {
     @State private var previewRaw =
         "so um, i think we should, like, launch the sip program on monday. new line follow up with the bevmo vendor and, you know, confirm gopuff pricing"
     @State private var inputDevices: [AudioInputDevices.Device] = []
-    @State private var groqKeyDraft = ""
 
     private var cleaned: String { CleanupEngine.clean(previewRaw, settings: settings.data) }
 
@@ -167,33 +166,6 @@ struct DictationPane: View {
                         ForEach(CleanupLevel.allCases, id: \.self) { Text($0.displayName).tag($0) }
                     }
                     .labelsHidden().frame(maxWidth: 280)
-                }
-                cardDivider()
-                SettingRow(title: "Phonetic dictionary matching",
-                           desc: "Corrects near-mishears of your dictionary words offline (same sound + close spelling). Only ever produces words from your dictionary.") {
-                    Toggle("", isOn: $settings.data.phoneticMatching).labelsHidden()
-                }
-                cardDivider()
-                SettingRow(title: "Smart correction",
-                           desc: "Repairs misrecognized words using context and your dictionary after each dictation. Adds a moment before pasting; falls back to standard cleanup on any failure.") {
-                    Toggle("", isOn: $settings.data.smartCorrection).labelsHidden()
-                }
-                cardDivider()
-                SettingRow(title: "Groq API key (speed)",
-                           desc: "Optional. A free key from console.groq.com makes smart correction one ~0.5s call instead of a multi-second Claude CLI spawn, and unlocks Whisper transcription below. Stored in your Keychain; press Return to save.") {
-                    SecureField("gsk_…", text: $groqKeyDraft)
-                        .textFieldStyle(.roundedBorder).frame(width: 220)
-                        // Save on every change (paste included) — an onSubmit-only
-                        // save silently loses the key when the user clicks away.
-                        .onChange(of: groqKeyDraft) { _, v in
-                            settings.groqKey = v.isEmpty ? nil : v
-                        }
-                        .onAppear { groqKeyDraft = settings.groqKey ?? "" }
-                }
-                cardDivider()
-                SettingRow(title: "Whisper transcription (Groq)",
-                           desc: "With a Groq key, the final text comes from Whisper large-v3 — typically far better with atypical speech. Apple still powers the live preview and is the fallback on any failure.") {
-                    Toggle("", isOn: $settings.data.whisperTranscription).labelsHidden()
                 }
             }
 

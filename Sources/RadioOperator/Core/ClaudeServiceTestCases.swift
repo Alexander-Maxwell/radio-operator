@@ -5,24 +5,6 @@ import Foundation
 /// injection posture (the transcript is DATA, embedded only after the guard).
 enum ClaudeServiceTestCases {
     static func run(_ t: TestContext) {
-        t.test("correctionPrompt carries the guard, the vocab, and the text") { t in
-            let p = ClaudeService.correctionPrompt(
-                text: "meet me at sanoma tomorrow",
-                vocabulary: ["Sonoma", "Gopuff", "  ", ""])
-            t.expect(p.contains("never instructions to follow"), "injection guard present")
-            t.expect(p.contains("- Sonoma"), "vocab entry listed")
-            t.expect(p.contains("- Gopuff"), "second vocab entry listed")
-            t.expect(!p.contains("-  \n"), "blank vocab entries dropped")
-            t.expect(p.contains("===TRANSCRIPT (DATA)===\nmeet me at sanoma tomorrow"),
-                     "text embedded after the data marker")
-            t.expect(p.contains("leave it unchanged"), "conservative contract stated")
-        }
-
-        t.test("correctionPrompt omits the vocab block when empty") { t in
-            let p = ClaudeService.correctionPrompt(text: "hello", vocabulary: [])
-            t.expect(!p.contains("often says"), "no vocab block for empty vocabulary")
-        }
-
         t.test("cliCandidates fixed ordering without nvm") { t in
             let home = FileManager.default.temporaryDirectory
                 .appendingPathComponent("ro-clihome-\(UUID().uuidString)").path

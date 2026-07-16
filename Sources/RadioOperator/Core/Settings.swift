@@ -197,22 +197,6 @@ struct SettingsData: Codable, Sendable {
     var claudeCLIModel: String = "sonnet"
     var apiModel: String = "claude-haiku-4-5"
     var smartLeadingSpace: Bool = true
-    /// Deterministic phonetic matching against your dictionary: a word the ASR
-    /// misheard into a near-homophone of one of your `spoken` terms is corrected
-    /// to the `written` form, offline and instantly. Conservative (same Soundex
-    /// AND small edit distance), so it only fires on your own vocabulary. ON by
-    /// default — it can only ever produce words you asked for.
-    var phoneticMatching: Bool = true
-    /// Optional LLM repair pass over the finished transcript: reconstructs
-    /// intended words from phonetic/ASR errors using your dictionary as context.
-    /// The single biggest lever for atypical speech. Adds ~0.5–1.5s and sends the
-    /// transcript to Claude (CLI/your subscription), so it is a toggle — but ON by
-    /// default because recognizing your words is the whole point.
-    var smartCorrection: Bool = true
-    /// With a Groq key stored, the FINAL dictation text comes from Groq-hosted
-    /// Whisper (markedly more robust to atypical speech). Apple stays for the
-    /// live preview and is the fallback on any failure. No key → pure Apple.
-    var whisperTranscription: Bool = true
     var hasCompletedOnboarding: Bool = false
     var echoGuardMode: EchoGuardMode = .auto
     var autoSummarize: Bool = true
@@ -365,7 +349,7 @@ struct SettingsData: Codable, Sendable {
         case holdHotkey, cleanupLevel, dictionary, snippets, notesFolderPath
         case audioFolderPath
         case retainAudio, claudeMode, claudeCLIModel, apiModel
-        case smartLeadingSpace, phoneticMatching, smartCorrection, whisperTranscription, hasCompletedOnboarding, echoGuardMode, micDeviceUID
+        case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
         case autoSummarize, appearance, summaryTemplates, selectedTemplateID
         case appRules, applyStyleToSummaries
@@ -393,9 +377,6 @@ struct SettingsData: Codable, Sendable {
         claudeCLIModel = (try? c.decodeIfPresent(String.self, forKey: .claudeCLIModel)) ?? d.claudeCLIModel
         apiModel = (try? c.decodeIfPresent(String.self, forKey: .apiModel)) ?? d.apiModel
         smartLeadingSpace = (try? c.decodeIfPresent(Bool.self, forKey: .smartLeadingSpace)) ?? d.smartLeadingSpace
-        phoneticMatching = (try? c.decodeIfPresent(Bool.self, forKey: .phoneticMatching)) ?? d.phoneticMatching
-        smartCorrection = (try? c.decodeIfPresent(Bool.self, forKey: .smartCorrection)) ?? d.smartCorrection
-        whisperTranscription = (try? c.decodeIfPresent(Bool.self, forKey: .whisperTranscription)) ?? d.whisperTranscription
         hasCompletedOnboarding = (try? c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)) ?? d.hasCompletedOnboarding
         echoGuardMode = (try? c.decodeIfPresent(EchoGuardMode.self, forKey: .echoGuardMode)) ?? d.echoGuardMode
         micDeviceUID = (try? c.decodeIfPresent(String.self, forKey: .micDeviceUID)) ?? d.micDeviceUID
@@ -537,43 +518,6 @@ final class SettingsStore: ObservableObject {
             // (kSecAttrAccessible protection classes are honored only by the
             // data-protection Keychain, which needs an application-identifier
             // entitlement this self-signed build lacks — so it is not set here.)
-            SecItemAdd(add as CFDictionary, nil)
-            objectWillChange.send()
-        }
-    }
-
-    // MARK: - Groq API key (Keychain) — smart-correction fast path
-
-    private static let groqKeychainAccount = "groq-api-key"
-
-    var groqKey: String? {
-        get {
-            let query: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: SettingsStore.keychainService,
-                kSecAttrAccount as String: SettingsStore.groqKeychainAccount,
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne,
-            ]
-            var item: CFTypeRef?
-            guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-                  let data = item as? Data,
-                  let key = String(data: data, encoding: .utf8), !key.isEmpty else { return nil }
-            return key
-        }
-        set {
-            let base: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: SettingsStore.keychainService,
-                kSecAttrAccount as String: SettingsStore.groqKeychainAccount,
-            ]
-            SecItemDelete(base as CFDictionary)
-            guard let newValue, !newValue.isEmpty else {
-                objectWillChange.send()
-                return
-            }
-            var add = base
-            add[kSecValueData as String] = Data(newValue.utf8)
             SecItemAdd(add as CFDictionary, nil)
             objectWillChange.send()
         }

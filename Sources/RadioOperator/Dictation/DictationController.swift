@@ -151,10 +151,6 @@ final class DictationController {
         }
     }
 
-    /// Mic audio for the Whisper final pass — created fresh per session in
-    /// `begin()`, consumed (and released) by `finishSession()`.
-    private var audioTap: DictationAudioTap?
-
     // MARK: - Session lifecycle
 
     private func begin(locked: Bool = false) {
@@ -176,10 +172,6 @@ final class DictationController {
 
         let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
         self.transcriber = transcriber
-        // Tap the mic for the Whisper final pass. Audio lives only in memory
-        // for the life of this dictation; the tap is dropped on every exit path.
-        let tap = DictationAudioTap()
-        self.audioTap = tap
 
         transcriber.onEvent = { event in
             Task { @MainActor in
@@ -220,7 +212,6 @@ final class DictationController {
                 // stream while the analyzer spins up.
                 let token = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in
                     transcriber.feed(buffer)
-                    tap.append(buffer)
                 }, onLevel: { level in
                     Task { @MainActor in AppState.shared.micLevel = level }
                 })
@@ -268,39 +259,14 @@ final class DictationController {
         }
         let transcriber = self.transcriber
         let pressedAt = self.pressedAt
-        let tap = self.audioTap
-        self.audioTap = nil
 
         Task { [weak self] in
             guard let self else { return }
-            // Whisper final pass (lever 4): send the session's mic audio to
-            // Groq-hosted Whisper — markedly more robust to atypical speech —
-            // and prefer its transcript. Apple's transcript (already assembled
-            // in `finals`) is the fallback on ANY failure, so this can only
-            // improve recognition, never lose a dictation. Kicked off BEFORE
-            // Apple's finalize so the two waits overlap instead of stacking
-            // (the mic is already unsubscribed, so the tap is complete).
-            let (whisperOn, groqKey, vocabulary) = await MainActor.run { () -> (Bool, String?, [String]) in
-                let d = SettingsStore.shared.data
-                return (d.whisperTranscription, SettingsStore.shared.groqKey,
-                        d.dictionary.map(\.written))
-            }
-            var whisperTask: Task<String?, Never>?
-            if whisperOn, let groqKey, let tap, tap.duration >= 0.4,
-               let wav = tap.wavData() {
-                whisperTask = Task {
-                    try? await GroqWhisper.transcribe(wav: wav, key: groqKey,
-                                                      vocabulary: vocabulary)
-                }
-            }
             let completed = await transcriber?.finishAndWait(timeout: 3.0) ?? false
-            let whisperRaw = await whisperTask?.value
             await MainActor.run {
                 guard self.state == .stopping else { return }
-                let appleRaw = self.finals.joined(separator: " ")
+                let raw = self.finals.joined(separator: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let whisper = whisperRaw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let raw = whisper.isEmpty ? appleRaw : whisper
                 let durationMs = pressedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
 
                 // Cleanup only runs on non-empty raw (unchanged); the decision
@@ -319,40 +285,22 @@ final class DictationController {
                 }
 
                 self.state = .idle
+                AppState.shared.dictationPhase = .pasting
                 let target = self.target ?? self.paste.captureTarget()
+                let text = SettingsStore.shared.data.smartLeadingSpace
+                    ? SmartSpace.merged(cleaned, needsSpace: SmartSpace.needsLeadingSpace(target: target))
+                    : cleaned
                 Task { @MainActor in
-                    // Smart correction: Claude repairs ASR mishears using the
-                    // user's dictionary as vocabulary — the heavy lever for a
-                    // speech impediment the deterministic rules can't reach.
-                    // Fallback on ANY failure is the deterministic cleanup: this
-                    // pass may improve the text, never lose it. The pill stays on
-                    // "Transcribing" while it runs; .pasting flips only after.
-                    var finalText = cleaned
-                    let settingsData = SettingsStore.shared.data
-                    if settingsData.smartCorrection, !cleaned.isEmpty {
-                        let vocabulary = settingsData.dictionary.map(\.written)
-                        if let corrected = try? await ClaudeService.shared.correctDictation(
-                               finalText, vocabulary: vocabulary),
-                           !corrected.isEmpty {
-                            finalText = corrected
-                        }
-                    }
-                    AppState.shared.dictationPhase = .pasting
-                    let text = settingsData.smartLeadingSpace
-                        ? SmartSpace.merged(finalText, needsSpace: SmartSpace.needsLeadingSpace(target: target))
-                        : finalText
                     let outcome = await self.paste.paste(text, target: target)
                     let pasteOK = outcome == .pasted
                     let retention = SettingsStore.shared.data.historyRetention
                     if retention != .never {
-                        // raw → finalText pairs are the heard→meant dataset a
-                        // future personalized (fine-tuned) model trains on.
                         HistoryStore.shared.record(
-                            raw: raw, cleaned: finalText,
+                            raw: raw, cleaned: cleaned,
                             appBundleID: target.bundleID,
                             durationMs: durationMs, pasteOK: pasteOK)
                         // Markdown mirror so Ask's CLI grep can see dictations.
-                        NotesStore.shared.appendDictation(text: finalText, appName: target.bundleID)
+                        NotesStore.shared.appendDictation(text: cleaned, appName: target.bundleID)
                         if retention == .day {
                             HistoryStore.shared.prune(olderThan: Date(timeIntervalSinceNow: -86_400))
                             NotesStore.pruneDictationLogs(
@@ -404,7 +352,6 @@ final class DictationController {
         }
         transcriber?.cancel()
         transcriber = nil
-        audioTap = nil
         state = .idle
         AppState.shared.dictationPhase = .error(message)
         scheduleErrorDismiss()
@@ -425,7 +372,6 @@ final class DictationController {
     private func resetToIdle() {
         state = .idle
         transcriber = nil
-        audioTap = nil
         clearLock()
         AppState.shared.dictationPhase = .idle
         AppState.shared.pillVolatile = ""

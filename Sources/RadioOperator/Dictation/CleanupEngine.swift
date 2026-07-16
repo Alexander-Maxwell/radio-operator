@@ -22,9 +22,6 @@ enum CleanupEngine {
         case .standard:
             var text = applyCommands(removeFillers(raw))
             text = applyDictionary(text, entries: settings.dictionary)
-            if settings.phoneticMatching {
-                text = applyPhoneticDictionary(text, entries: settings.dictionary)
-            }
             if let expansion = snippetExpansion(for: text, snippets: settings.snippets) {
                 return expansion
             }
@@ -210,121 +207,6 @@ enum CleanupEngine {
             return ch == "." || ch == "!" || ch == "?"
         }
         return true
-    }
-
-    // MARK: - Phonetic dictionary
-
-    /// Second-chance dictionary pass for misheard words: a word the recognizer
-    /// got *nearly* right — same Soundex code AND small edit distance to a
-    /// single-word `spoken` term — is corrected to that entry's `written` form.
-    /// Deliberately conservative: exact matches were already handled by
-    /// `applyDictionary`, candidates must be ≥3 letters, and both gates must
-    /// agree, so it can only ever produce words the user explicitly asked for.
-    /// This is the offline half of speech-impediment support: consistent
-    /// mishears of *your* vocabulary self-correct with zero latency.
-    static func applyPhoneticDictionary(_ s: String, entries: [DictionaryEntry]) -> String {
-        guard !s.isEmpty else { return s }
-        // Single-word spoken terms only; multi-word phrases are exact-match
-        // territory. Precompute codes once per call.
-        let candidates: [(spoken: String, written: String, code: String)] = entries.compactMap {
-            let spoken = $0.spoken.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard spoken.count >= 3, !spoken.contains(" ") else { return nil }
-            return (spoken, $0.written, soundex(spoken))
-        }
-        guard !candidates.isEmpty else { return s }
-
-        let ns = s as NSString
-        var out = ""
-        var cursor = 0
-        for match in wordToken.matches(in: s, options: [], range: NSRange(location: 0, length: ns.length)) {
-            out += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
-            let word = ns.substring(with: match.range)
-            out += phoneticReplacement(for: word, candidates: candidates, prefix: out) ?? word
-            cursor = match.range.location + match.range.length
-        }
-        out += ns.substring(from: cursor)
-        return out
-    }
-
-    private static let wordToken = regex("[A-Za-z']{3,}")
-
-    /// The correction for one word, or nil to keep it. Skips words that already
-    /// ARE a spoken/written form (case differences are not mishears).
-    private static func phoneticReplacement(
-        for word: String,
-        candidates: [(spoken: String, written: String, code: String)],
-        prefix: String
-    ) -> String? {
-        let lower = word.lowercased()
-        if candidates.contains(where: { $0.spoken == lower || $0.written.lowercased() == lower }) {
-            return nil
-        }
-        let code = soundex(lower)
-        for c in candidates {
-            // Both gates: phonetically identical (Soundex) AND spelling-close
-            // (≤1 edit for short words, ≤2 for 6+ letters). Either alone is
-            // too loose; together they mean "the same word, misheard".
-            guard c.code == code else { continue }
-            let limit = max(lower.count, c.spoken.count) >= 6 ? 2 : 1
-            guard levenshtein(lower, c.spoken) <= limit else { continue }
-            var replacement = c.written
-            if isSentenceStart(before: prefix), let first = replacement.first, first.isLowercase {
-                replacement = first.uppercased() + String(replacement.dropFirst())
-            }
-            return replacement
-        }
-        return nil
-    }
-
-    /// American Soundex: first letter + 3 digits (b/f/p/v→1, c/g/j/k/q/s/x/z→2,
-    /// d/t→3, l→4, m/n→5, r→6; vowels/h/w/y separate). Pure and total — anything
-    /// non-alphabetic contributes nothing.
-    static func soundex(_ word: String) -> String {
-        let letters = word.lowercased().unicodeScalars.filter { $0.value >= 97 && $0.value <= 122 }
-        guard let first = letters.first else { return "" }
-        func digit(_ c: Unicode.Scalar) -> Character? {
-            switch c {
-            case "b", "f", "p", "v": return "1"
-            case "c", "g", "j", "k", "q", "s", "x", "z": return "2"
-            case "d", "t": return "3"
-            case "l": return "4"
-            case "m", "n": return "5"
-            case "r": return "6"
-            default: return nil   // a e i o u y h w
-            }
-        }
-        var out = String(Character(first)).uppercased()
-        var lastDigit = digit(first)
-        for c in letters.dropFirst() {
-            let d = digit(c)
-            // h/w are transparent (do not reset the run); vowels do reset it.
-            if d == nil {
-                if c != "h", c != "w" { lastDigit = nil }
-                continue
-            }
-            if d != lastDigit, let d { out.append(d) }
-            lastDigit = d
-        }
-        return String(out.prefix(4)).padding(toLength: 4, withPad: "0", startingAt: 0)
-    }
-
-    /// Classic two-row Levenshtein distance. Case-sensitive; callers lowercase.
-    static func levenshtein(_ a: String, _ b: String) -> Int {
-        if a == b { return 0 }
-        let aa = Array(a.unicodeScalars), bb = Array(b.unicodeScalars)
-        if aa.isEmpty { return bb.count }
-        if bb.isEmpty { return aa.count }
-        var prev = Array(0...bb.count)
-        var cur = [Int](repeating: 0, count: bb.count + 1)
-        for i in 1...aa.count {
-            cur[0] = i
-            for j in 1...bb.count {
-                let cost = aa[i - 1] == bb[j - 1] ? 0 : 1
-                cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
-            }
-            swap(&prev, &cur)
-        }
-        return prev[bb.count]
     }
 
     // MARK: - Snippets
