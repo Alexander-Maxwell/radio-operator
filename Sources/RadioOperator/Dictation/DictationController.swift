@@ -151,6 +151,10 @@ final class DictationController {
         }
     }
 
+    /// Mic audio for the Whisper final pass — created fresh per session in
+    /// `begin()`, consumed (and released) by `finishSession()`.
+    private var audioTap: DictationAudioTap?
+
     // MARK: - Session lifecycle
 
     private func begin(locked: Bool = false) {
@@ -172,6 +176,10 @@ final class DictationController {
 
         let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
         self.transcriber = transcriber
+        // Tap the mic for the Whisper final pass. Audio lives only in memory
+        // for the life of this dictation; the tap is dropped on every exit path.
+        let tap = DictationAudioTap()
+        self.audioTap = tap
 
         transcriber.onEvent = { event in
             Task { @MainActor in
@@ -212,6 +220,7 @@ final class DictationController {
                 // stream while the analyzer spins up.
                 let token = try MicCapture.shared.subscribe(format: format, onBuffer: { buffer in
                     transcriber.feed(buffer)
+                    tap.append(buffer)
                 }, onLevel: { level in
                     Task { @MainActor in AppState.shared.micLevel = level }
                 })
@@ -259,14 +268,34 @@ final class DictationController {
         }
         let transcriber = self.transcriber
         let pressedAt = self.pressedAt
+        let tap = self.audioTap
+        self.audioTap = nil
 
         Task { [weak self] in
             guard let self else { return }
             let completed = await transcriber?.finishAndWait(timeout: 3.0) ?? false
+            // Whisper final pass (lever 4): send the session's mic audio to
+            // Groq-hosted Whisper — markedly more robust to atypical speech —
+            // and prefer its transcript. Apple's transcript (already assembled
+            // in `finals`) is the fallback on ANY failure, so this can only
+            // improve recognition, never lose a dictation.
+            let (whisperOn, groqKey, vocabulary) = await MainActor.run { () -> (Bool, String?, [String]) in
+                let d = SettingsStore.shared.data
+                return (d.whisperTranscription, SettingsStore.shared.groqKey,
+                        d.dictionary.map(\.written))
+            }
+            var whisperRaw: String?
+            if whisperOn, let groqKey, let tap, tap.duration >= 0.4,
+               let wav = tap.wavData() {
+                whisperRaw = try? await GroqWhisper.transcribe(
+                    wav: wav, key: groqKey, vocabulary: vocabulary)
+            }
             await MainActor.run {
                 guard self.state == .stopping else { return }
-                let raw = self.finals.joined(separator: " ")
+                let appleRaw = self.finals.joined(separator: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+                let whisper = whisperRaw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let raw = whisper.isEmpty ? appleRaw : whisper
                 let durationMs = pressedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
 
                 // Cleanup only runs on non-empty raw (unchanged); the decision
@@ -370,6 +399,7 @@ final class DictationController {
         }
         transcriber?.cancel()
         transcriber = nil
+        audioTap = nil
         state = .idle
         AppState.shared.dictationPhase = .error(message)
         scheduleErrorDismiss()
@@ -390,6 +420,7 @@ final class DictationController {
     private func resetToIdle() {
         state = .idle
         transcriber = nil
+        audioTap = nil
         clearLock()
         AppState.shared.dictationPhase = .idle
         AppState.shared.pillVolatile = ""

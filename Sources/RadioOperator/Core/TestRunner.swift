@@ -63,6 +63,7 @@ enum TestRunner {
         ("Template", TemplateTestCases.run),
         ("AppRule", AppRuleTestCases.run),
         ("MeetingNoteParser", MeetingNoteParserTestCases.run),
+        ("Whisper", WhisperTestCases.run),
     ]
 
     /// Device tier: suites that need real hardware, TCC grants, or a signed-in

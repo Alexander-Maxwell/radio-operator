@@ -209,6 +209,10 @@ struct SettingsData: Codable, Sendable {
     /// transcript to Claude (CLI/your subscription), so it is a toggle — but ON by
     /// default because recognizing your words is the whole point.
     var smartCorrection: Bool = true
+    /// With a Groq key stored, the FINAL dictation text comes from Groq-hosted
+    /// Whisper (markedly more robust to atypical speech). Apple stays for the
+    /// live preview and is the fallback on any failure. No key → pure Apple.
+    var whisperTranscription: Bool = true
     var hasCompletedOnboarding: Bool = false
     var echoGuardMode: EchoGuardMode = .auto
     var autoSummarize: Bool = true
@@ -361,7 +365,7 @@ struct SettingsData: Codable, Sendable {
         case holdHotkey, cleanupLevel, dictionary, snippets, notesFolderPath
         case audioFolderPath
         case retainAudio, claudeMode, claudeCLIModel, apiModel
-        case smartLeadingSpace, phoneticMatching, smartCorrection, hasCompletedOnboarding, echoGuardMode, micDeviceUID
+        case smartLeadingSpace, phoneticMatching, smartCorrection, whisperTranscription, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
         case autoSummarize, appearance, summaryTemplates, selectedTemplateID
         case appRules, applyStyleToSummaries
@@ -391,6 +395,7 @@ struct SettingsData: Codable, Sendable {
         smartLeadingSpace = (try? c.decodeIfPresent(Bool.self, forKey: .smartLeadingSpace)) ?? d.smartLeadingSpace
         phoneticMatching = (try? c.decodeIfPresent(Bool.self, forKey: .phoneticMatching)) ?? d.phoneticMatching
         smartCorrection = (try? c.decodeIfPresent(Bool.self, forKey: .smartCorrection)) ?? d.smartCorrection
+        whisperTranscription = (try? c.decodeIfPresent(Bool.self, forKey: .whisperTranscription)) ?? d.whisperTranscription
         hasCompletedOnboarding = (try? c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)) ?? d.hasCompletedOnboarding
         echoGuardMode = (try? c.decodeIfPresent(EchoGuardMode.self, forKey: .echoGuardMode)) ?? d.echoGuardMode
         micDeviceUID = (try? c.decodeIfPresent(String.self, forKey: .micDeviceUID)) ?? d.micDeviceUID

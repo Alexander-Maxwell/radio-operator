@@ -180,11 +180,16 @@ struct DictationPane: View {
                 }
                 cardDivider()
                 SettingRow(title: "Groq API key (speed)",
-                           desc: "Optional. A free key from console.groq.com makes smart correction one ~0.5s call instead of a multi-second Claude CLI spawn. Stored in your Keychain; press Return to save.") {
+                           desc: "Optional. A free key from console.groq.com makes smart correction one ~0.5s call instead of a multi-second Claude CLI spawn, and unlocks Whisper transcription below. Stored in your Keychain; press Return to save.") {
                     SecureField("gsk_…", text: $groqKeyDraft)
                         .textFieldStyle(.roundedBorder).frame(width: 220)
                         .onSubmit { settings.groqKey = groqKeyDraft.isEmpty ? nil : groqKeyDraft }
                         .onAppear { groqKeyDraft = settings.groqKey ?? "" }
+                }
+                cardDivider()
+                SettingRow(title: "Whisper transcription (Groq)",
+                           desc: "With a Groq key, the final text comes from Whisper large-v3 — typically far better with atypical speech. Apple still powers the live preview and is the fallback on any failure.") {
+                    Toggle("", isOn: $settings.data.whisperTranscription).labelsHidden()
                 }
             }
 
