@@ -172,6 +172,17 @@ final class DictationController {
 
         let transcriber: any TranscriptionEngine = Transcriber(channel: .me)
         self.transcriber = transcriber
+        // Bias Apple's recognizer toward the user's own vocabulary — dictionary
+        // terms (spoken + written) and snippet triggers. On-device, zero added
+        // latency; the single highest-leverage recognition aid that keeps the
+        // hot path deterministic.
+        if let apple = transcriber as? Transcriber {
+            let d = SettingsStore.shared.data
+            apple.contextualStrings = Array(Set(
+                d.dictionary.flatMap { [$0.spoken, $0.written] }
+                    + d.snippets.map(\.trigger)
+            )).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        }
 
         transcriber.onEvent = { event in
             Task { @MainActor in

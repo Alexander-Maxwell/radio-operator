@@ -21,6 +21,11 @@ final class Transcriber: TranscriptionEngine, @unchecked Sendable {
     var onEvent: (@Sendable (TranscriptEvent) -> Void)?
     var onError: (@Sendable (String) -> Void)?
 
+    /// Words/phrases the recognizer should bias toward (the user's dictionary
+    /// terms, snippet triggers). Applied best-effort via `AnalysisContext` at
+    /// `start()` — on-device, zero latency; an empty list changes nothing.
+    var contextualStrings: [String] = []
+
     init(channel: Speaker) {
         self.channel = channel
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
@@ -88,6 +93,14 @@ final class Transcriber: TranscriptionEngine, @unchecked Sendable {
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         self.analyzer = analyzer
+
+        // Bias recognition toward the user's own vocabulary. Best-effort:
+        // a context failure must never cost a dictation.
+        if !contextualStrings.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = contextualStrings
+            try? await analyzer.setContext(context)
+        }
 
         let channel = self.channel
         let onEvent = { [weak self] (event: TranscriptEvent) in
