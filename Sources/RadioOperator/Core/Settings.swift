@@ -197,6 +197,11 @@ struct SettingsData: Codable, Sendable {
     var claudeCLIModel: String = "sonnet"
     var apiModel: String = "claude-haiku-4-5"
     var smartLeadingSpace: Bool = true
+    /// Deterministic phonetic matching against your dictionary: a word the ASR
+    /// misheard into a near-homophone of one of your `spoken` terms is corrected
+    /// to the `written` form — offline, instant, and it can only ever produce
+    /// words you put in the dictionary yourself.
+    var phoneticMatching: Bool = true
     var hasCompletedOnboarding: Bool = false
     var echoGuardMode: EchoGuardMode = .auto
     var autoSummarize: Bool = true
@@ -349,7 +354,7 @@ struct SettingsData: Codable, Sendable {
         case holdHotkey, cleanupLevel, dictionary, snippets, notesFolderPath
         case audioFolderPath
         case retainAudio, claudeMode, claudeCLIModel, apiModel
-        case smartLeadingSpace, hasCompletedOnboarding, echoGuardMode, micDeviceUID
+        case smartLeadingSpace, phoneticMatching, hasCompletedOnboarding, echoGuardMode, micDeviceUID
         case historyRetention, launchAtLogin
         case autoSummarize, appearance, summaryTemplates, selectedTemplateID
         case appRules, applyStyleToSummaries
@@ -377,6 +382,7 @@ struct SettingsData: Codable, Sendable {
         claudeCLIModel = (try? c.decodeIfPresent(String.self, forKey: .claudeCLIModel)) ?? d.claudeCLIModel
         apiModel = (try? c.decodeIfPresent(String.self, forKey: .apiModel)) ?? d.apiModel
         smartLeadingSpace = (try? c.decodeIfPresent(Bool.self, forKey: .smartLeadingSpace)) ?? d.smartLeadingSpace
+        phoneticMatching = (try? c.decodeIfPresent(Bool.self, forKey: .phoneticMatching)) ?? d.phoneticMatching
         hasCompletedOnboarding = (try? c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)) ?? d.hasCompletedOnboarding
         echoGuardMode = (try? c.decodeIfPresent(EchoGuardMode.self, forKey: .echoGuardMode)) ?? d.echoGuardMode
         micDeviceUID = (try? c.decodeIfPresent(String.self, forKey: .micDeviceUID)) ?? d.micDeviceUID

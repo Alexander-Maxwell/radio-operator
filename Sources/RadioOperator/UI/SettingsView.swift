@@ -167,6 +167,11 @@ struct DictationPane: View {
                     }
                     .labelsHidden().frame(maxWidth: 280)
                 }
+                cardDivider()
+                SettingRow(title: "Phonetic dictionary matching",
+                           desc: "Corrects near-mishears of your dictionary words offline (same sound + close spelling). Instant, and it only ever produces words from your dictionary.") {
+                    Toggle("", isOn: $settings.data.phoneticMatching).labelsHidden()
+                }
             }
 
             Card(title: "Hold-to-talk") {
