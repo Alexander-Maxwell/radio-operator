@@ -34,7 +34,14 @@ final class RecordingHUDController: ObservableObject {
     }
 
     func dismiss() {
+        // Release the panel, don't just orderOut. The HUD meters animate
+        // unconditionally (FlowWave + TimelineView(.animation)); an ordered-out
+        // window keeps its SwiftUI view alive, so that timeline keeps ticking
+        // off-screen and drives Core Animation commits at 60fps — ~15-20% CPU
+        // that never stops after a meeting ends (and stacks up until the process
+        // wedges). Tearing the panel down stops the timeline; show() rebuilds it.
         panel?.orderOut(nil)
+        panel = nil
     }
 
     /// Fixed HUD sizes. ponytail: the meter animates at 60fps, so ANY live
