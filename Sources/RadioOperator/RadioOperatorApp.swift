@@ -14,6 +14,27 @@ enum URLCommand: Equatable {
     case unknown
 }
 
+/// Coordinates the reply for a `.terminateLater` quit taken while a meeting is
+/// recording. AppKit requires `NSApp.reply(toApplicationShouldTerminate:)` to be
+/// called EXACTLY once: a second call violates the contract, and never calling
+/// it hangs the quit forever. Two callers race to trigger it — the stop path
+/// finishing (transcript flushed) and a hard deadline that guarantees the quit
+/// even if audio teardown wedges — so the first wins and the rest are no-ops.
+/// Pure and nonisolated so it unit-tests without NSApplication, the same way
+/// `parseURLCommand` is. Main-thread only; both triggers already run there, so
+/// no lock is needed. ponytail: add a lock only if a trigger ever moves off-main.
+final class TerminateOnceGate {
+    private var fired = false
+    private let reply: () -> Void
+    init(reply: @escaping () -> Void) { self.reply = reply }
+    /// The first call replies; every later call is ignored.
+    func trigger() {
+        guard !fired else { return }
+        fired = true
+        reply()
+    }
+}
+
 @main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -170,14 +191,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            MeetingController.shared.stop()
-            // Give the stop path a moment to flush the transcript to disk.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                NSApp.terminate(nil)
-            }
-        }
-        return .terminateCancel
+        guard response == .alertFirstButtonReturn else { return .terminateCancel }
+
+        // Terminate on our schedule, not a fixed timer. Return .terminateLater and
+        // reply exactly once — whichever fires first: the stop path finishing
+        // (transcript flushed), or a hard deadline that guarantees the app quits
+        // even if audio teardown wedges (the VPIO/AEC latch). The old code fired
+        // stop() then blindly terminated after 1.5s; when stop hadn't finished that
+        // terminate re-entered this method and re-showed this very dialog — the
+        // "Stop Meeting & Quit does nothing" hang.
+        // Reply exactly once — the first of {stop finished, hard deadline} wins.
+        let gate = TerminateOnceGate { NSApp.reply(toApplicationShouldTerminate: true) }
+        MeetingController.shared.stop(then: { gate.trigger() })
+        // ponytail: 10s hard cap covers the ~8s worst-case transcriber finalize;
+        // the transcript-saved completion normally fires in well under 2s.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { gate.trigger() }
+        return .terminateLater
     }
 
     // MARK: - Menu

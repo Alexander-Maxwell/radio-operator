@@ -45,6 +45,7 @@ enum TestRunner {
         ("MCP", MCPTestCases.run),
         ("CommandMode", CommandModeTestCases.run),
         ("URLCommand", URLCommandTestCases.run),
+        ("TerminateGate", TerminateGateTestCases.run),
         ("PasteLogic", PasteLogicTestCases.run),
         ("DictationFinalize", DictationFinalizeTestCases.run),
         ("MicConvert", MicConvertTestCases.run),

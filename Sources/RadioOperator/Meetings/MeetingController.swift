@@ -361,8 +361,12 @@ final class MeetingController: ObservableObject {
 
     // MARK: - Stop
 
-    func stop() {
-        guard active, !stopping else { return }
+    /// - Parameter onQuit: when non-nil, the caller is quitting. Fired on the
+    ///   main actor the instant the transcript is durably saved, and the
+    ///   auto-summary is skipped (it spawns ClaudeService, which is slow and the
+    ///   step most likely to wedge a quit; regenerate it later from the Library).
+    func stop(then onQuit: (() -> Void)? = nil) {
+        guard active, !stopping else { onQuit?(); return }
         stopping = true
         RecordingHUDController.shared.dismiss()
         elapsedTimer?.invalidate()
@@ -397,6 +401,16 @@ final class MeetingController: ObservableObject {
                 self.active = false
                 self.stopping = false
                 AppState.shared.meetingActive = false
+
+                // Quit path: transcript is on disk. Hand control back to the
+                // terminator now and skip auto-summary to keep quit fast and
+                // unhangable. ponytail: summary-on-quit is best-effort; regenerate
+                // from the Library if you need it.
+                if let onQuit {
+                    self.stopInternals()
+                    onQuit()
+                    return
+                }
 
                 guard let noteURL = self.noteURL else { return }
                 let duration = Int(Date().timeIntervalSince(startedAt))

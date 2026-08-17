@@ -353,8 +353,15 @@ final class MicCapture: @unchecked Sendable {
     /// `AudioLevelTestCases`, means the gate can't misread audio as silence
     /// again. Returns (0, 0) for an empty or unreadable buffer.
     static func amplitude(of buffer: AVAudioPCMBuffer) -> (peak: Float, rms: Float) {
-        let n = Int(buffer.frameLength)
+        // NEVER trust frameLength alone: a buffer wrapped around a raw
+        // AudioBufferList from the system-audio tap can report a length longer
+        // than its allocation, and reading that far off channel 0 is an
+        // out-of-bounds access → SIGSEGV (field crash 2026-08-15, in the tap's
+        // realtime callback). Bound by frameCapacity, and step by the channel
+        // stride so interleaved buffers read channel 0, not into the next frame.
+        let n = min(Int(buffer.frameLength), Int(buffer.frameCapacity))
         guard n > 0 else { return (0, 0) }
+        let stride = max(1, buffer.stride)
         var peak: Float = 0
         var sumSquares: Double = 0
         func accumulate(_ value: Float) {
@@ -363,11 +370,11 @@ final class MicCapture: @unchecked Sendable {
             sumSquares += Double(a) * Double(a)
         }
         if let ch = buffer.floatChannelData?.pointee {
-            for i in 0..<n { accumulate(ch[i]) }
+            for i in 0..<n { accumulate(ch[i * stride]) }
         } else if let ch = buffer.int16ChannelData?.pointee {
-            for i in 0..<n { accumulate(Float(ch[i]) / 32768.0) }
+            for i in 0..<n { accumulate(Float(ch[i * stride]) / 32768.0) }
         } else if let ch = buffer.int32ChannelData?.pointee {
-            for i in 0..<n { accumulate(Float(Double(ch[i]) / 2_147_483_648.0)) }
+            for i in 0..<n { accumulate(Float(Double(ch[i * stride]) / 2_147_483_648.0)) }
         } else {
             return (0, 0)
         }
