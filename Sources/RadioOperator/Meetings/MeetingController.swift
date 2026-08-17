@@ -58,6 +58,9 @@ final class MeetingController: ObservableObject {
 
     var isActive: Bool { active }
 
+    /// Bumped on every teardown so a stale watchdog can't reset a newer meeting.
+    private var teardownGeneration = 0
+
     // MARK: - Start
 
     func start(autoStarted: Bool = false) {
@@ -253,6 +256,7 @@ final class MeetingController: ObservableObject {
         elapsedTimer?.invalidate()
         watchdogTimer?.invalidate()
         persistTask?.cancel()
+        armTeardownWatchdog()
         let discardURL = noteURL
 
         Task { [weak self] in
@@ -385,6 +389,7 @@ final class MeetingController: ObservableObject {
         watchdogTimer?.invalidate()
         autoCancelTimer?.invalidate(); autoCancelTimer = nil
         persistTask?.cancel()
+        armTeardownWatchdog()
 
         let startedAt = self.startedAt ?? Date()
 
@@ -498,6 +503,41 @@ final class MeetingController: ObservableObject {
             case .failure(let error):
                 self?.summaryPhase = .failed(message: error.localizedDescription, noteURL: noteURL)
             }
+        }
+    }
+
+    /// Belt-and-suspenders for the async drain. The bounded finalizes should
+    /// always let stop()/discardIfPhantom() reach their `stopping = false`, but if
+    /// one ever wedged, `stopping` would stay true and silently block the next
+    /// Start (the red icon is already cleared up-front — this is the invisible
+    /// half of the hang). Fires well after the drain must have finished and, only
+    /// if we're still stuck AND no newer teardown superseded us, slams to idle.
+    /// A no-op when teardown already completed.
+    /// The watchdog fires ONLY when it still owns the teardown (no newer stop
+    /// superseded it) AND the drain hasn't finished. Pure, so the cross-meeting
+    /// staleness guard — a stale watchdog must not reset a *newer* meeting's
+    /// teardown — is unit-testable.
+    nonisolated static func watchdogShouldReset(currentGeneration: Int,
+                                                watchdogGeneration: Int,
+                                                stopping: Bool) -> Bool {
+        currentGeneration == watchdogGeneration && stopping
+    }
+
+    private func armTeardownWatchdog() {
+        teardownGeneration &+= 1
+        let gen = teardownGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard let self,
+                  MeetingController.watchdogShouldReset(
+                    currentGeneration: self.teardownGeneration,
+                    watchdogGeneration: gen, stopping: self.stopping) else { return }
+            NSLog("RadioOperator meeting teardown watchdog — drain wedged, forcing idle reset")
+            self.active = false
+            self.stopping = false
+            AppState.shared.meetingActive = false
+            AppState.shared.summaryInFlight = false
+            self.stopInternals()
         }
     }
 

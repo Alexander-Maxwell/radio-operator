@@ -32,5 +32,24 @@ enum TerminateGateTestCases {
             _ = TerminateOnceGate { n += 1 }
             t.expectEqual(n, 0, "reply is not fired on its own")
         }
+
+        // MARK: - Teardown watchdog staleness guard
+        t.test("watchdog fires when it still owns a wedged teardown") { t in
+            t.expect(MeetingController.watchdogShouldReset(
+                currentGeneration: 3, watchdogGeneration: 3, stopping: true),
+                "same generation + still stopping → force idle")
+        }
+        t.test("watchdog no-ops once teardown completed") { t in
+            t.expect(!MeetingController.watchdogShouldReset(
+                currentGeneration: 3, watchdogGeneration: 3, stopping: false),
+                "drain finished (stopping cleared) → no-op")
+        }
+        t.test("stale watchdog never resets a newer meeting") { t in
+            // Meeting A armed at gen 3; meeting B stops (gen 4, stopping) before
+            // A's watchdog fires. A's stale watchdog must not touch B.
+            t.expect(!MeetingController.watchdogShouldReset(
+                currentGeneration: 4, watchdogGeneration: 3, stopping: true),
+                "superseded generation → no-op even while stopping")
+        }
     }
 }
