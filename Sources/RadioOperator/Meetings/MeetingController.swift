@@ -244,6 +244,10 @@ final class MeetingController: ObservableObject {
                 sawSpeech: sawRealSpeech) else { return }
         stopping = true
         autoStarted = false
+        // Same guarantee as stop(): the phantom / no-speech discard clears the live
+        // flags synchronously so the red icon can never linger on the async path.
+        active = false
+        AppState.shared.meetingActive = false
         RecordingHUDController.shared.dismiss()
         autoCancelTimer?.invalidate(); autoCancelTimer = nil
         elapsedTimer?.invalidate()
@@ -368,6 +372,14 @@ final class MeetingController: ObservableObject {
     func stop(then onQuit: (() -> Void)? = nil) {
         guard active, !stopping else { onQuit?(); return }
         stopping = true
+        // Capture is over the instant we commit to stopping — clear the "live"
+        // flags SYNCHRONOUSLY. The async drain below is bounded but not guaranteed
+        // to reach its own reset if a finalize stalls, and it must never be what
+        // turns the red menu-bar icon off. It only finalizes text + summary now.
+        // (`stopping` is cleared at the END of the drain, since a new meeting must
+        // not start while this one's audio is still draining.)
+        active = false
+        AppState.shared.meetingActive = false
         RecordingHUDController.shared.dismiss()
         elapsedTimer?.invalidate()
         watchdogTimer?.invalidate()
