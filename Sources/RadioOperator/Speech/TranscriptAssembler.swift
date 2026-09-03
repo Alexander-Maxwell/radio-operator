@@ -29,18 +29,21 @@ final class TranscriptAssembler {
         self.echoGuard = echoGuard
     }
 
-    func ingest(_ event: TranscriptEvent) {
+    /// Returns whether a final entered the transcript (false for volatiles,
+    /// empty finals, and `me` finals dropped as speaker echo).
+    @discardableResult
+    func ingest(_ event: TranscriptEvent) -> Bool {
         guard event.isFinal else {
             // Volatiles replace, never append. Empty text clears the hypothesis.
             setVolatile(event.text, for: event.channel)
-            return
+            return false
         }
 
         // A final always supersedes the channel's in-progress hypothesis.
         setVolatile("", for: event.channel)
 
         let text = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else { return false }
 
         let end = event.wallClock
         let start: Date
@@ -52,10 +55,11 @@ final class TranscriptAssembler {
 
         if echoGuard, event.channel == .me,
            isLikelyEcho(meText: text, start: start, end: end) {
-            return
+            return false
         }
 
         insert(Utterance(speaker: event.channel, text: text, start: start, end: end))
+        return true
     }
 
     /// Clears volatiles and returns the final utterance list.

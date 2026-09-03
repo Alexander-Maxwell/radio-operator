@@ -193,6 +193,20 @@ struct MeetingWindowView: View {
                 .overlay(RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(Theme.hairline(0.07), lineWidth: 1))
                 .disabled(!state.meetingActive)
+            if !controller.liveAnswers.isEmpty {
+                Eyebrow(text: "LIVE ANSWERS", size: 10, tracking: 1.6)
+                    .padding(.top, 4)
+                ScrollView {
+                    Text(controller.liveAnswers)
+                        .font(Theme.display(12))
+                        .foregroundStyle(Theme.textBody)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(6)
+                }
+                .frame(maxHeight: 110)
+                .background(Theme.lift(0.03), in: RoundedRectangle(cornerRadius: 9))
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

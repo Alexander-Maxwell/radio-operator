@@ -492,6 +492,11 @@ struct MeetingsPane: View {
                         Toggle("", isOn: $settings.data.autoSummarize).labelsHidden()
                     }
                     cardDivider()
+                    SettingRow(title: "Answer questions live",
+                               desc: "Off by default. When on, questions heard during a meeting — yours or anyone's on the call — are answered from your notes with Claude while the call is running: the question plus matching excerpts from your past meeting notes and dictation logs (up to about a page) leave this Mac mid-meeting. Questions with no match are skipped locally and never sent. Answers arrive as a notification and under Live answers in the note.") {
+                        Toggle("", isOn: $settings.data.liveLookup).labelsHidden()
+                    }
+                    cardDivider()
                     SettingRow(title: "Summary template",
                                desc: "Which template the summary follows. Edit template contents in Intelligence.") {
                         Picker("", selection: meetingTemplateBinding) {

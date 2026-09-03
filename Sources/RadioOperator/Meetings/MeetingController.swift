@@ -53,6 +53,23 @@ final class MeetingController: ObservableObject {
     private var sawRealSpeech = false
     /// One-shot grace-window check that discards a silent auto-start.
     private var autoCancelTimer: Timer?
+    /// Live lookup (opt-in): at most one Claude call in flight for a question
+    /// heard on either channel. The gate lives in QuestionDetector; the
+    /// generation lets a cancelled lookup's cleanup never touch a newer one.
+    @Published private(set) var lookupInFlight = false
+    /// Answers so far, persisted under "## Live answers" — machine-generated,
+    /// so kept apart from userNotes (which steers the summary).
+    @Published private(set) var liveAnswers: String = "" {
+        didSet {
+            guard active, liveAnswers != oldValue else { return }
+            schedulePersist()
+        }
+    }
+    private var lookupTask: Task<Void, Never>?
+    private var lookupGeneration = 0
+    private var lookupCount = 0
+    private var lastLookupKey: String?
+    private var lastLookupAt: Date?
 
     private init() {}
 
@@ -72,6 +89,10 @@ final class MeetingController: ObservableObject {
         banner = nil
         summaryPhase = .none
         userNotes = ""
+        liveAnswers = ""
+        lookupCount = 0
+        lastLookupKey = nil
+        lastLookupAt = nil
         let echoMode = SettingsStore.shared.data.echoGuardMode
         // Echo guard turns on whenever the far side can leak from the speakers
         // back into the mic — i.e. any output that isn't confidently headphones
@@ -256,6 +277,7 @@ final class MeetingController: ObservableObject {
         elapsedTimer?.invalidate()
         watchdogTimer?.invalidate()
         persistTask?.cancel()
+        cancelLookup()
         armTeardownWatchdog()
         let discardURL = noteURL
 
@@ -297,6 +319,84 @@ final class MeetingController: ObservableObject {
         userNotes = userNotes.isEmpty ? line : userNotes + "\n" + line
     }
 
+    // MARK: - Live lookup
+
+    /// If a finalized line reads as a question, look it up in the user's notes
+    /// with Claude while the meeting runs. Opt-in (`liveLookup`), either
+    /// channel, one at a time, capped per meeting. The app retrieves the
+    /// excerpts locally first (the live note excluded), so a question the
+    /// notes can't answer never leaves the Mac, and the spawn gets no tools.
+    /// The answer lands as a notification and under "Live answers" in the note.
+    // ponytail: notification + note section is the whole surface; add a
+    // floating panel if Focus (screen sharing) swallows too many notifications.
+    private func maybeLookup(text: String, channel: Speaker) {
+        guard SettingsStore.shared.data.liveLookup,
+              let question = QuestionDetector.question(in: text) else { return }
+        let key = QuestionDetector.key(question)
+        guard QuestionDetector.shouldFire(
+            key: key, lastKey: lastLookupKey, lastAt: lastLookupAt, now: Date(),
+            inFlight: lookupTask != nil, count: lookupCount) else { return }
+        lastLookupKey = key
+        lastLookupAt = Date()
+        lookupGeneration &+= 1
+        let gen = lookupGeneration
+        let terms = QuestionDetector.searchTerms(question)
+        let notesFolder = SettingsStore.shared.notesFolderURL
+        let liveNote = noteURL
+        let elapsed = elapsedText
+        let qLen = question.count
+        lookupInFlight = true
+        lookupTask = Task { @MainActor [weak self] in
+            defer {
+                if let self, self.lookupGeneration == gen {
+                    self.lookupInFlight = false
+                    self.lookupTask = nil
+                }
+            }
+            // Only the app's own corpus (Meetings/, Dictations/), never the rest
+            // of a vault the notes folder may live in.
+            let corpus = [ClaudeService.scopedFolder(.meetings, notesFolder: notesFolder),
+                          ClaudeService.scopedFolder(.dictations, notesFolder: notesFolder)]
+            let snippets = await Task.detached(priority: .utility) {
+                QuestionDetector.snippets(terms: terms, in: corpus, excluding: liveNote,
+                                          maxChars: 6000)
+            }.value
+            guard !snippets.isEmpty, !Task.isCancelled, let self, self.active else {
+                NSLog("RadioOperator live lookup skipped — no local match (\(qLen) chars, \(terms.count) terms)")
+                return
+            }
+            // The cap counts real spawns, not detections.
+            self.lookupCount += 1
+            let raw: String
+            do {
+                raw = try await ClaudeService.shared.lookup(
+                    question: question, speaker: channel, snippets: snippets, timeout: 45)
+            } catch {
+                let label = (error as? ClaudeService.ClaudeError)?.logLabel
+                    ?? (error is CancellationError ? "cancelled" : String(describing: type(of: error)))
+                NSLog("RadioOperator live lookup failed — \(label)")
+                return
+            }
+            guard !Task.isCancelled, self.active,
+                  let answer = QuestionDetector.answer(from: raw) else { return }
+            let who = channel == .me ? "You" : "They"
+            let flat = QuestionDetector.oneLine(answer)
+            let line = "❓ \(elapsed) \(who) asked: \(question)\n→ \(flat.prefix(600))"
+            self.liveAnswers = self.liveAnswers.isEmpty ? line : self.liveAnswers + "\n\n" + line
+            MeetingController.notify(title: "❓ \(question.prefix(60))",
+                                     body: String(flat.prefix(500)))
+        }
+    }
+
+    /// Kills any in-flight lookup (the Claude child dies with the task) so it
+    /// can never outlive the meeting or block the drain.
+    private func cancelLookup() {
+        lookupGeneration &+= 1
+        lookupTask?.cancel()
+        lookupTask = nil
+        lookupInFlight = false
+    }
+
     // MARK: - Live ingestion
 
     private func ingest(_ event: TranscriptEvent) {
@@ -305,12 +405,15 @@ final class MeetingController: ObservableObject {
         // means this is a genuine call, so the phantom check won't discard it.
         let text = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty, !text.hasPrefix("[") { sawRealSpeech = true }
-        assembler.ingest(event)
+        let kept = assembler.ingest(event)
         AppState.shared.meetingUtterances = assembler.utterances
         AppState.shared.meetingVolatileMe = assembler.volatileMe
         AppState.shared.meetingVolatileThem = assembler.volatileThem
         if event.isFinal {
             schedulePersist()
+            // Only finals that made the transcript: a mic echo of the far side
+            // must not be looked up as "You asked".
+            if kept { maybeLookup(text: text, channel: event.channel) }
         }
     }
 
@@ -334,7 +437,8 @@ final class MeetingController: ObservableObject {
             summaryMarkdown: NotesStore.summaryPendingMarker,
             utterances: assembler.utterances,
             degradedMicOnly: AppState.shared.meetingDegradedNoTap,
-            userNotes: userNotes)
+            userNotes: userNotes,
+            liveAnswers: liveAnswers)
         try? content.write(to: noteURL, atomically: true, encoding: .utf8)
     }
 
@@ -389,6 +493,7 @@ final class MeetingController: ObservableObject {
         watchdogTimer?.invalidate()
         autoCancelTimer?.invalidate(); autoCancelTimer = nil
         persistTask?.cancel()
+        cancelLookup()
         armTeardownWatchdog()
 
         let startedAt = self.startedAt ?? Date()
@@ -553,6 +658,7 @@ final class MeetingController: ObservableObject {
         watchdogTimer = nil
         autoCancelTimer?.invalidate()
         autoCancelTimer = nil
+        cancelLookup()
     }
 
     // MARK: - Helpers

@@ -228,7 +228,9 @@ final class NotesStore {
     /// preserving frontmatter, H1, "## My Notes", and the transcript.
     nonisolated static func replacedSummary(in content: String, with summaryMarkdown: String) -> String {
         var out = content
-        let anchor = out.range(of: "\n## My Notes") ?? out.range(of: "\n## Transcript")
+        let anchor = out.range(of: "\n## My Notes")
+            ?? out.range(of: "\n## Live answers")
+            ?? out.range(of: "\n## Transcript")
         if let anchor {
             if let titleLine = out.range(of: "\n# ", range: out.startIndex..<anchor.lowerBound),
                let titleEnd = out[titleLine.upperBound...].firstIndex(of: "\n") {
@@ -291,7 +293,8 @@ final class NotesStore {
 
     nonisolated static func renderNote(title: String, start: Date, durationSeconds: Int,
                                        summaryMarkdown: String, utterances: [Utterance],
-                                       degradedMicOnly: Bool, userNotes: String = "") -> String {
+                                       degradedMicOnly: Bool, userNotes: String = "",
+                                       liveAnswers: String = "") -> String {
         let iso = ISO8601DateFormatter()
         let tf = DateFormatter()
         tf.dateFormat = "HH:mm:ss"
@@ -314,6 +317,16 @@ final class NotesStore {
             lines.append("## My Notes")
             lines.append("")
             lines.append(notes)
+            lines.append("")
+        }
+        // Machine-generated, so it gets its own section: never part of My
+        // Notes (which steers the summary) and never after the transcript
+        // (which a summary retry re-feeds to Claude).
+        let live = liveAnswers.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !live.isEmpty {
+            lines.append("## Live answers")
+            lines.append("")
+            lines.append(live)
             lines.append("")
         }
         lines.append("## Transcript")

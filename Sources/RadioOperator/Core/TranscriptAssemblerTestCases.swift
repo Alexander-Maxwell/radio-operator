@@ -70,6 +70,18 @@ enum TranscriptAssemblerTestCases {
             t.expectEqual(assembler.utterances[1].text, "me speaks later", "second text")
         }
 
+        t.test("ingest reports whether a final entered the transcript") { t in
+            let assembler = TranscriptAssembler(echoGuard: true)
+            t.expect(assembler.ingest(makeEvent(.them, "we pushed the launch to july fifteenth", at: 0)),
+                     "them final kept")
+            t.expect(!assembler.ingest(makeEvent(.me, "we pushed the launch to july fifteenth", at: 1)),
+                     "mic echo of the far side is dropped, and says so")
+            t.expect(assembler.ingest(makeEvent(.me, "sounds good to me", at: 2)), "real me final kept")
+            t.expect(!assembler.ingest(makeEvent(.me, "partial", isFinal: false, at: 3)),
+                     "a volatile is not a kept final")
+            t.expectEqual(assembler.utterances.count, 2, "echo never entered the transcript")
+        }
+
         t.test("late arrival merges with utterance preceding insertion point") { t in
             let assembler = TranscriptAssembler()
             assembler.ingest(makeEvent(.them, "we should", at: 0))

@@ -47,14 +47,26 @@ enum ProbeRunner {
             semaphore.wait()
             exit(0)
         }
+        if let i = args.firstIndex(of: "--probe-lookup") {
+            guard args.count > i + 1 else {
+                print("usage: RadioOperator --probe-lookup \"<question>\"")
+                exit(2)
+            }
+            let q = args[i + 1]
+            Task {
+                await probeLookup(question: q)
+                exit(0)
+            }
+            dispatchMain()
+        }
         if args.contains("--probe-ask") {
-            let semaphore = DispatchSemaphore(value: 0)
+            // ask() hops to the MainActor for settings, so the main thread must
+            // service its queue while we wait — a semaphore here deadlocks.
             Task {
                 await probeAsk()
-                semaphore.signal()
+                exit(0)
             }
-            semaphore.wait()
-            exit(0)
+            dispatchMain()
         }
         if let flagIndex = args.firstIndex(of: "--probe-wer") {
             guard args.count > flagIndex + 1 else {
@@ -235,6 +247,39 @@ enum ProbeRunner {
         } catch {
             print("PROBE-ASK error: \(error.localizedDescription)")
             print("PROBE-RESULT FAIL — ask threw (needs Claude auth/CLI in this session)")
+        }
+    }
+
+    /// End-to-end live-lookup round trip over the REAL notes folder, printing
+    /// exactly what would leave the Mac: detector → local snippets → zero-tool
+    /// Claude spawn → answer parse. Needs Claude auth; not part of --run-tests.
+    static func probeLookup(question: String) async {
+        let notesFolder = await MainActor.run { SettingsStore.shared.notesFolderURL }
+        guard let q = QuestionDetector.question(in: question) else {
+            print("PROBE-LOOKUP detector rejected: \(question)")
+            print("PROBE-RESULT FAIL — not a lookup-worthy question")
+            return
+        }
+        let terms = QuestionDetector.searchTerms(q)
+        let t0 = Date()
+        let corpus = [ClaudeService.scopedFolder(.meetings, notesFolder: notesFolder),
+                      ClaudeService.scopedFolder(.dictations, notesFolder: notesFolder)]
+        let snippets = QuestionDetector.snippets(terms: terms, in: corpus, excluding: nil, maxChars: 6000)
+        print("PROBE-LOOKUP terms=\(terms) snippets=\(snippets.count) chars retrieval=\(Int(Date().timeIntervalSince(t0) * 1000)) ms")
+        guard !snippets.isEmpty else {
+            print("PROBE-RESULT PASS — no local match, nothing sent")
+            return
+        }
+        print("PROBE-LOOKUP payload:\n\(snippets)\n")
+        do {
+            let t1 = Date()
+            let raw = try await ClaudeService.shared.lookup(question: q, speaker: .them, snippets: snippets)
+            print("PROBE-LOOKUP reply after \(Int(Date().timeIntervalSince(t1)))s:\n\(raw)")
+            let shown = QuestionDetector.answer(from: raw)
+            print("PROBE-RESULT \(shown == nil ? "PASS — NO_ANSWER/uncited, nothing shown" : "PASS — cited answer shown")")
+        } catch {
+            print("PROBE-LOOKUP error: \(error.localizedDescription)")
+            print("PROBE-RESULT FAIL — lookup threw")
         }
     }
 

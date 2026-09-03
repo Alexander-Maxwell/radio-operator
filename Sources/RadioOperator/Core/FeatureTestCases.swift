@@ -448,6 +448,7 @@ enum MiscFeatureTestCases {
             t.expectEqual(d.appearance, .system, "appearance defaults to system")
             t.expect(d.activeSummaryTemplateBody.contains("## Summary"), "summary template defaulted")
             t.expectEqual(d.transcriptionLocaleIdentifier, "en_US", "transcription locale defaults to en_US")
+            t.expectEqual(d.liveLookup, false, "liveLookup defaults off (mid-meeting egress is opt-in)")
         }
 
         t.test("settings round-trip preserves new fields") { t in
@@ -457,6 +458,7 @@ enum MiscFeatureTestCases {
             s.appearance = .dark
             s.setSelectedTemplateBody("## Custom\n(x)")
             s.transcriptionLocaleIdentifier = "de_DE"
+            s.liveLookup = true
             guard let data = try? JSONEncoder().encode(s),
                   let back = try? JSONDecoder().decode(SettingsData.self, from: data) else {
                 t.expect(false, "encode/decode failed"); return
@@ -466,6 +468,7 @@ enum MiscFeatureTestCases {
             t.expectEqual(back.appearance, .dark, "appearance round-trips")
             t.expectEqual(back.activeSummaryTemplateBody, "## Custom\n(x)", "template round-trips")
             t.expectEqual(back.transcriptionLocaleIdentifier, "de_DE", "transcription locale round-trips")
+            t.expectEqual(back.liveLookup, true, "liveLookup round-trips")
         }
 
         t.test("ask scope maps to the right folder") { t in

@@ -284,11 +284,19 @@ struct RecordingHUDView: View {
     private var footer: some View {
         VStack(spacing: 12) {
             Rectangle().fill(Theme.hairline(0.07)).frame(height: 1)
+            // Privacy line is state-dependent: it must never read "nothing
+            // leaves this Mac" while a live lookup is on or in flight. Same
+            // single line, same font, so the fixed panel height holds.
             HStack(spacing: 7) {
-                GlowDot(color: Theme.green, size: 6)
-                Text("Nothing leaves this Mac — transcribing on-device")
+                GlowDot(color: controller.lookupInFlight ? Theme.amber : Theme.green, size: 6)
+                Text(controller.lookupInFlight
+                     ? "Looking that up in your notes with Claude…"
+                     : SettingsStore.shared.data.liveLookup
+                        ? "Transcribing on-device — questions go to Claude"
+                        : "Nothing leaves this Mac — transcribing on-device")
                     .font(Theme.display(11))
                     .foregroundStyle(Theme.textMeta)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
             }
         }

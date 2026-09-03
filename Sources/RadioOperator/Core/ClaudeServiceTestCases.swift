@@ -17,6 +17,33 @@ enum ClaudeServiceTestCases {
             ], "Claude Code local install first, then package managers")
         }
 
+        t.test("cliArguments pins the tool boundary and ignores global MCP config") { t in
+            let args = ClaudeService.cliArguments(model: "sonnet", allowedTools: "Read,Grep,Glob")
+            t.expect(args.contains("--strict-mcp-config"),
+                     "user MCP servers never load (no self-spawned RadioOperator --mcp per call)")
+            t.expect(args.contains("--no-session-persistence"),
+                     "prompts (transcripts, excerpts) are never written to ~/.claude session logs")
+            t.expect(args.contains("--allowedTools"), "allowed list passed when given")
+            guard let i = args.firstIndex(of: "--disallowedTools"), i + 1 < args.count else {
+                t.expect(false, "deny list missing"); return
+            }
+            let denied = args[i + 1].split(separator: ",").map(String.init)
+            for tool in ["Bash", "Write", "WebFetch", "WebSearch", "Task"] {
+                t.expect(denied.contains(tool), "\(tool) denied")
+            }
+            t.expect(!ClaudeService.cliArguments(model: "sonnet", allowedTools: nil)
+                        .contains("--allowedTools"), "no allowed list when nil")
+        }
+
+        t.test("cliArguments can drop every tool for a zero-tool spawn") { t in
+            let args = ClaudeService.cliArguments(model: "sonnet", allowedTools: nil, noTools: true)
+            guard let i = args.firstIndex(of: "--tools"), i + 1 < args.count else {
+                t.expect(false, "--tools missing"); return
+            }
+            t.expectEqual(args[i + 1], "", "empty list disables every built-in tool")
+            t.expect(args.contains("--strict-mcp-config"), "still no MCP servers")
+        }
+
         t.test("cliCandidates appends nvm versions newest-first") { t in
             let fm = FileManager.default
             let home = fm.temporaryDirectory

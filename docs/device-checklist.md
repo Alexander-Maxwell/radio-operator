@@ -62,6 +62,13 @@ check per line.
       new route, no dead transcript.
 - [ ] Degraded path: deny system-audio tap → meeting still records mic-only
       and the note carries the microphone-only banner.
+- [ ] Live answers (Settings → Meetings → "Answer questions live" ON): with a
+      past note about X, ask "What did we decide about X?" aloud or from the
+      far end → HUD footer turns amber "Looking that up…", a notification
+      carries a cited answer, and the note gains a `## Live answers` section
+      that survives the summary. "Can you hear me?" and a question about
+      something not in your notes fire nothing. Stop mid-lookup → no `claude`
+      child survives (`pgrep -fl "claude -p"`).
 
 ## 4. Command Mode smoke (D6)
 

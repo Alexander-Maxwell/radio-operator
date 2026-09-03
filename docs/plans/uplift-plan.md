@@ -142,6 +142,7 @@ Two cross-area collisions resolve cleanly:
 | D8 | Panic-wipe: **DB + Keychain cryptographic-erase by default**; notes/audio deletion as an explicit second checkbox. |
 | D9 | Soak leak threshold: fail only on **>50% RSS growth after warm-up, sampled 3–5×**. |
 | D10 | **No self-hosted runner.** Core test tier on hosted macOS-26 CI; device tier stays a manual pre-release checklist. |
+| D11 | Live lookups (2026-09-02): questions heard mid-meeting — **either channel, other participants included** — may be sent to Claude while the call runs, **opt-in only** (`liveLookup`, default off), Anthropic-only, one at a time, capped per meeting. The app retrieves the excerpts locally (whole-word match over past notes, the live note excluded) and the spawn runs with **zero tools** (`--tools ""`), so a miss never leaves the Mac and far-side speech can steer nothing but the answer's wording. Answers live in their own `## Live answers` section, never in My Notes (which steers the summary). The HUD privacy line becomes state-dependent. |
 
 ## Original decision table (context — superseded by the locked answers above)
 

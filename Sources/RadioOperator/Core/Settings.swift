@@ -235,6 +235,13 @@ struct SettingsData: Codable, Sendable {
     /// by the no-speech self-discard, at the cost of the occasional brief phantom
     /// HUD when some other app opens the mic.
     var autoStartBroad: Bool = false
+    /// Look up questions heard during a meeting (yours or anyone's on the
+    /// call) in your notes with Claude while the call is running. OFF by
+    /// default: when on, each detected question — including other
+    /// participants' words — leaves this Mac mid-meeting instead of only at
+    /// stop. A miss costs nothing (a local pre-check skips questions the notes
+    /// can't answer); a false positive costs one Claude call, capped per meeting.
+    var liveLookup: Bool = false
     /// Hardware echo cancellation (Apple Voice-Processing I/O) on the mic, so
     /// the far side coming through the speakers is removed before transcription
     /// and never mislabeled as "Me". OFF by default: VPIO is a duplex unit that
@@ -360,7 +367,7 @@ struct SettingsData: Codable, Sendable {
         case appRules, applyStyleToSummaries
         case transcriptionLocaleIdentifier
         case autoStartOnMic, autoStartBroad, micEchoCancellation
-        case commandHotkey
+        case commandHotkey, liveLookup
     }
 
     /// Decode-only keys from retired schema versions (never re-encoded).
@@ -416,6 +423,7 @@ struct SettingsData: Codable, Sendable {
         autoStartBroad = (try? c.decodeIfPresent(Bool.self, forKey: .autoStartBroad)) ?? d.autoStartBroad
         micEchoCancellation = (try? c.decodeIfPresent(Bool.self, forKey: .micEchoCancellation)) ?? d.micEchoCancellation
         commandHotkey = (try? c.decodeIfPresent(HoldHotkey.self, forKey: .commandHotkey)) ?? d.commandHotkey
+        liveLookup = (try? c.decodeIfPresent(Bool.self, forKey: .liveLookup)) ?? d.liveLookup
     }
 }
 

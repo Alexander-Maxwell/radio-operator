@@ -98,8 +98,14 @@ rest, keys in Keychain, and a single content-egress destination (Anthropic).
 Note the app process itself opens exactly one network connection (the API in
 opt-in API mode); in the default CLI mode the `claude` subprocess is what
 reaches Anthropic — so meeting summaries, titles, and Ask do send that content
-off-device. Plain dictation stays fully local (deterministic cleanup, no LLM);
-turn off auto-summarize and skip Ask to keep everything on this Mac.
+off-device. With **Answer questions live** on (off by default), questions heard
+during a meeting — yours or anyone's on the call — are also sent to Claude
+while the call is running, together with matching excerpts the app picks from
+your past meeting notes and dictation logs (up to about a page; never the
+current meeting's transcript); a question with no match is skipped locally and
+never sent. Plain dictation stays
+fully local (deterministic cleanup, no LLM); turn off auto-summarize and live
+answers and skip Ask to keep everything on this Mac.
 
 ## Data at rest
 
@@ -211,6 +217,7 @@ Headless checks that need no permissions:
 .build/debug/RadioOperator --probe-wer clips/manifest.json  # accuracy benchmark (WER/CER)
 .build/debug/RadioOperator --probe-churn 40                 # session-teardown leak stress
 .build/debug/RadioOperator --probe-soak 300                 # held-session RSS soak (D9 verdict)
+.build/debug/RadioOperator --probe-lookup "What did we decide about Acme pricing?"  # live-lookup round trip over your notes (prints what leaves the Mac)
 ```
 
 The WER manifest is a JSON array of labeled clips — the reproducible number
