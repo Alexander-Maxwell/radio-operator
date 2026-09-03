@@ -53,19 +53,22 @@ install: app
 	  rm -rf "/Applications/Radio Operator.app.prev"; \
 	  echo "  SKIP_MIC_GATE=1 → live-mic gate skipped. Installed /Applications/Radio Operator.app"; \
 	  exit 0; \
-	fi
-	@echo "  running live-mic gate on the installed signed binary (up to 3 probes; a silent build rolls back)…"
-	@pass=0; \
+	fi; \
+	echo "  running live-mic gate on the installed signed binary (up to 3 probes; a silent build rolls back)…"; \
+	pass=0; \
 	for i in 1 2 3; do \
-	  if "/Applications/Radio Operator.app/Contents/MacOS/RadioOperator" --probe-capture 3 2>&1 | grep -q "PROBE-RESULT PASS"; then \
+	  out=$$("/Applications/Radio Operator.app/Contents/MacOS/RadioOperator" --probe-capture 3 2>&1); \
+	  if printf '%s' "$$out" | grep -q "PROBE-RESULT PASS"; then \
 	    pass=1; echo "  probe $$i: PASS"; break; \
-	  else echo "  probe $$i: FAIL (buffers silent)"; fi; \
+	  else echo "  probe $$i: $$(printf '%s' "$$out" | grep -E 'PROBE-(RESULT|FAIL)' | tail -1)"; fi; \
 	done; \
 	if [ "$$pass" = "1" ]; then \
 	  rm -rf "/Applications/Radio Operator.app.prev"; \
 	  echo "✅ live-mic gate PASSED — Installed /Applications/Radio Operator.app"; \
 	else \
 	  echo "❌ live-mic gate FAILED — the new build's mic came up SILENT (VPIO/AEC signature)."; \
+	  echo "   Note: launched from an IDE/app-embedded terminal, macOS checks THAT app's Microphone permission,"; \
+	  echo "   not Radio Operator's. Run from Terminal.app, grant the mic to that app, or SKIP_MIC_GATE=1 make install."; \
 	  if [ -d "/Applications/Radio Operator.app.prev" ]; then \
 	    rm -rf "/Applications/Radio Operator.app"; \
 	    mv "/Applications/Radio Operator.app.prev" "/Applications/Radio Operator.app"; \
