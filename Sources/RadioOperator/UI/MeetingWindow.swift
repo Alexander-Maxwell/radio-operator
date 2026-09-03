@@ -193,9 +193,21 @@ struct MeetingWindowView: View {
                 .overlay(RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(Theme.hairline(0.07), lineWidth: 1))
                 .disabled(!state.meetingActive)
+            if !controller.liveAnswers.isEmpty || (state.meetingActive && SettingsStore.shared.data.liveLookup) {
+                HStack(spacing: 8) {
+                    Eyebrow(text: "LIVE ANSWERS", size: 10, tracking: 1.6)
+                    Text(controller.lookupInFlight
+                         ? "looking that up in your notes with Claude…"
+                         : controller.lookupNotice?.lowercased()
+                            ?? (state.meetingActive ? "listening for questions" : ""))
+                        .font(Theme.display(11))
+                        .foregroundStyle(controller.lookupInFlight || controller.lookupNotice != nil
+                                         ? Theme.amber : Theme.textMeta)
+                        .lineLimit(1)
+                }
+                .padding(.top, 4)
+            }
             if !controller.liveAnswers.isEmpty {
-                Eyebrow(text: "LIVE ANSWERS", size: 10, tracking: 1.6)
-                    .padding(.top, 4)
                 ScrollView {
                     Text(controller.liveAnswers)
                         .font(Theme.display(12))

@@ -74,6 +74,20 @@ enum LiveLookupTestCases {
                           "Are you wondering, uh, which partners we've spoken to?",
                           "a fact about us inside a you-question still counts")
         }
+        t.test("several questions in one breath are looked up together") { t in
+            let breath = "Hey Maxwell, I've got a question for you. How are we doing with atomic delivery? "
+                + "What do our numbers look like? Who are the top competitors? And what does the cost look like?"
+            t.expectEqual(QuestionDetector.question(in: breath),
+                          "How are we doing with atomic delivery? What do our numbers look like? "
+                          + "Who are the top competitors? And what does the cost look like?",
+                          "every question sentence, the greeting dropped")
+            t.expectEqual(QuestionDetector.question(in: "What exactly are you wondering? Are you wondering, uh, which partners we've spoken to?"),
+                          "Are you wondering, uh, which partners we've spoken to?",
+                          "only the sentences that qualify")
+            t.expectEqual(QuestionDetector.searchTerms(QuestionDetector.question(in: breath) ?? ""),
+                          ["atomic", "delivery", "numbers", "competitors", "cost"],
+                          "retrieval sees the whole set")
+        }
         t.test("honesty markers are ignored") { t in
             t.expectEqual(QuestionDetector.question(in: "[Me transcription lost at 10:02]"), nil, "bracketed marker")
         }

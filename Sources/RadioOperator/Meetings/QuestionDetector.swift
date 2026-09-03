@@ -74,39 +74,44 @@ enum QuestionDetector {
         "yep", "nah", "hmm", "huh", "umm", "ask", "tell", "told", "mean", "us", "ok",
         // question-shape words, not topic words
         "wondering", "wonder", "exactly", "curious", "wanted", "asking", "update",
-        "status", "latest", "remind", "anyone", "anybody",
+        "status", "latest", "remind", "anyone", "anybody", "look", "looks", "looking",
+        "top", "best", "main", "biggest",
     ]
 
-    /// The trailing sentence of `text` if it reads as a lookup-worthy question.
+    /// The lookup-worthy question sentences of `text`, joined — a breath that
+    /// packs several questions is looked up as one — or nil if none qualifies.
     nonisolated static func question(in text: String) -> String? {
         let s = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty, !s.hasPrefix("[") else { return nil }
-        let sentence = lastSentence(of: s)
+        let asked = sentences(of: s).filter(qualifies)
+        return asked.isEmpty ? nil : asked.joined(separator: " ")
+    }
+
+    private static func qualifies(_ sentence: String) -> Bool {
         let words = sentence.split(whereSeparator: { $0.isWhitespace }).count
-        guard (minWords...maxWords).contains(words) else { return nil }
+        guard (minWords...maxWords).contains(words) else { return false }
         let range = fullRange(sentence)
-        guard conversational.firstMatch(in: sentence, range: range) == nil else { return nil }
+        guard conversational.firstMatch(in: sentence, range: range) == nil else { return false }
         let strong = strongAsk.firstMatch(in: sentence, range: range) != nil
-        guard strong || secondPerson.firstMatch(in: sentence, range: range) == nil else { return nil }
+        guard strong || secondPerson.firstMatch(in: sentence, range: range) == nil else { return false }
         // A recognizer-terminated statement ("Can we move on.") is not a
         // question; the lead-word fallback exists only for missing punctuation.
         let terminated = sentence.last.map { ".!".contains($0) } ?? false
-        let asks = strong || sentence.hasSuffix("?")
+        return strong || sentence.hasSuffix("?")
             || (!terminated && lead.firstMatch(in: sentence, range: range) != nil)
-        return asks ? sentence : nil
     }
 
-    /// Sentence-aware split (handles "Mr.", "U.S.", "e.g."), last sentence wins.
-    private static func lastSentence(of s: String) -> String {
+    /// Sentence-aware split (handles "Mr.", "U.S.", "e.g.").
+    private static func sentences(of s: String) -> [String] {
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.string = s
-        var last: Range<String.Index>?
+        var out: [String] = []
         tokenizer.enumerateTokens(in: s.startIndex..<s.endIndex) { range, _ in
-            last = range
+            let t = s[range].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { out.append(t) }
             return true
         }
-        guard let last else { return s }
-        return s[last].trimmingCharacters(in: .whitespacesAndNewlines)
+        return out.isEmpty ? [s] : out
     }
 
     /// Normalized dedupe key: lowercase, letters/digits only, single spaces.

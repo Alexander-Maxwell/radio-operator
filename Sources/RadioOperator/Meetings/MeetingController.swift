@@ -172,7 +172,15 @@ final class MeetingController: ObservableObject {
         }
 
         // Mic → "Me"
+        // Bias the recognizer toward the user's own vocabulary (dictionary
+        // terms, snippet triggers), exactly as dictation does — product and
+        // partner names are what live lookups have to match.
+        let d = SettingsStore.shared.data
+        let vocabulary = Array(Set(
+            d.dictionary.flatMap { [$0.spoken, $0.written] } + d.snippets.map(\.trigger)
+        )).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         let mic: any TranscriptionEngine = Transcriber(channel: .me)
+        (mic as? Transcriber)?.contextualStrings = vocabulary
         micTranscriber = mic
         mic.onEvent = { [weak self] event in
             Task { @MainActor in self?.ingest(event) }
@@ -183,6 +191,7 @@ final class MeetingController: ObservableObject {
 
         // System audio → "Them"
         let system: any TranscriptionEngine = Transcriber(channel: .them)
+        (system as? Transcriber)?.contextualStrings = vocabulary
         systemTranscriber = system
         system.onEvent = { [weak self] event in
             Task { @MainActor in self?.ingest(event) }
