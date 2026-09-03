@@ -70,6 +70,9 @@ final class MeetingController: ObservableObject {
     private var lookupCount = 0
     private var lastLookupKey: String?
     private var lastLookupAt: Date?
+    /// One queued question (newest wins) for when a lookup is already running,
+    /// so the second of two back-to-back questions is not lost.
+    private var pendingLookup: (text: String, channel: Speaker, at: Date)?
 
     private init() {}
 
@@ -93,6 +96,7 @@ final class MeetingController: ObservableObject {
         lookupCount = 0
         lastLookupKey = nil
         lastLookupAt = nil
+        pendingLookup = nil
         let echoMode = SettingsStore.shared.data.echoGuardMode
         // Echo guard turns on whenever the far side can leak from the speakers
         // back into the mic — i.e. any output that isn't confidently headphones
@@ -335,12 +339,24 @@ final class MeetingController: ObservableObject {
         let key = QuestionDetector.key(question)
         guard QuestionDetector.shouldFire(
             key: key, lastKey: lastLookupKey, lastAt: lastLookupAt, now: Date(),
-            inFlight: lookupTask != nil, count: lookupCount) else { return }
+            inFlight: false, count: lookupCount) else { return }
+        if lookupTask != nil {
+            pendingLookup = (text, channel, Date())
+            return
+        }
         lastLookupKey = key
         lastLookupAt = Date()
         lookupGeneration &+= 1
         let gen = lookupGeneration
-        let terms = QuestionDetector.searchTerms(question)
+        // Retrieval leans on the turn before the question; the prompt sees the
+        // last few turns so pronouns and follow-ups resolve.
+        let turns = assembler.utterances
+        let lastHoldsQuestion = turns.last?.text.contains(question) ?? false
+        let previousTurn = (lastHoldsQuestion ? turns.dropLast().last : turns.last)?.text
+        let terms = QuestionDetector.retrievalTerms(question: question, previousTurn: previousTurn)
+        let context = turns.suffix(4)
+            .map { "\($0.speaker.rawValue): \(String($0.text.suffix(220)))" }
+            .joined(separator: "\n")
         let notesFolder = SettingsStore.shared.notesFolderURL
         let liveNote = noteURL
         let elapsed = elapsedText
@@ -351,6 +367,12 @@ final class MeetingController: ObservableObject {
                 if let self, self.lookupGeneration == gen {
                     self.lookupInFlight = false
                     self.lookupTask = nil
+                    if let next = self.pendingLookup {
+                        self.pendingLookup = nil
+                        if self.active, Date().timeIntervalSince(next.at) < 60 {
+                            self.maybeLookup(text: next.text, channel: next.channel)
+                        }
+                    }
                 }
             }
             // Only the app's own corpus (Meetings/, Dictations/), never the rest
@@ -359,7 +381,7 @@ final class MeetingController: ObservableObject {
                           ClaudeService.scopedFolder(.dictations, notesFolder: notesFolder)]
             let snippets = await Task.detached(priority: .utility) {
                 QuestionDetector.snippets(terms: terms, in: corpus, excluding: liveNote,
-                                          maxChars: 6000)
+                                          maxChars: 7000)
             }.value
             guard !snippets.isEmpty, !Task.isCancelled, let self, self.active else {
                 NSLog("RadioOperator live lookup skipped — no local match (\(qLen) chars, \(terms.count) terms)")
@@ -370,7 +392,8 @@ final class MeetingController: ObservableObject {
             let raw: String
             do {
                 raw = try await ClaudeService.shared.lookup(
-                    question: question, speaker: channel, snippets: snippets, timeout: 45)
+                    question: question, speaker: channel, context: context, snippets: snippets,
+                    timeout: 45)
             } catch {
                 let label = (error as? ClaudeService.ClaudeError)?.logLabel
                     ?? (error is CancellationError ? "cancelled" : String(describing: type(of: error)))
@@ -395,6 +418,7 @@ final class MeetingController: ObservableObject {
         lookupTask?.cancel()
         lookupTask = nil
         lookupInFlight = false
+        pendingLookup = nil
     }
 
     // MARK: - Live ingestion

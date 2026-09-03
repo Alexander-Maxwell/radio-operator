@@ -49,12 +49,13 @@ enum ProbeRunner {
         }
         if let i = args.firstIndex(of: "--probe-lookup") {
             guard args.count > i + 1 else {
-                print("usage: RadioOperator --probe-lookup \"<question>\"")
+                print("usage: RadioOperator --probe-lookup \"<question>\" [\"<previous turn>\"]")
                 exit(2)
             }
             let q = args[i + 1]
+            let prev = args.count > i + 2 && !args[i + 2].hasPrefix("--") ? args[i + 2] : nil
             Task {
-                await probeLookup(question: q)
+                await probeLookup(question: q, previousTurn: prev)
                 exit(0)
             }
             dispatchMain()
@@ -253,27 +254,28 @@ enum ProbeRunner {
     /// End-to-end live-lookup round trip over the REAL notes folder, printing
     /// exactly what would leave the Mac: detector → local snippets → zero-tool
     /// Claude spawn → answer parse. Needs Claude auth; not part of --run-tests.
-    static func probeLookup(question: String) async {
+    static func probeLookup(question: String, previousTurn: String? = nil) async {
         let notesFolder = await MainActor.run { SettingsStore.shared.notesFolderURL }
         guard let q = QuestionDetector.question(in: question) else {
             print("PROBE-LOOKUP detector rejected: \(question)")
             print("PROBE-RESULT FAIL — not a lookup-worthy question")
             return
         }
-        let terms = QuestionDetector.searchTerms(q)
+        let terms = QuestionDetector.retrievalTerms(question: q, previousTurn: previousTurn)
+        let context = [previousTurn.map { "Them: \($0)" }, "Them: \(q)"].compactMap { $0 }.joined(separator: "\n")
         let t0 = Date()
         let corpus = [ClaudeService.scopedFolder(.meetings, notesFolder: notesFolder),
                       ClaudeService.scopedFolder(.dictations, notesFolder: notesFolder)]
-        let snippets = QuestionDetector.snippets(terms: terms, in: corpus, excluding: nil, maxChars: 6000)
+        let snippets = QuestionDetector.snippets(terms: terms, in: corpus, excluding: nil, maxChars: 7000)
         print("PROBE-LOOKUP terms=\(terms) snippets=\(snippets.count) chars retrieval=\(Int(Date().timeIntervalSince(t0) * 1000)) ms")
         guard !snippets.isEmpty else {
             print("PROBE-RESULT PASS — no local match, nothing sent")
             return
         }
-        print("PROBE-LOOKUP payload:\n\(snippets)\n")
+        print("PROBE-LOOKUP prompt (exactly what leaves the Mac):\n\(ClaudeService.lookupPrompt(question: q, speaker: .them, context: context, snippets: snippets))\n")
         do {
             let t1 = Date()
-            let raw = try await ClaudeService.shared.lookup(question: q, speaker: .them, snippets: snippets)
+            let raw = try await ClaudeService.shared.lookup(question: q, speaker: .them, context: context, snippets: snippets)
             print("PROBE-LOOKUP reply after \(Int(Date().timeIntervalSince(t1)))s:\n\(raw)")
             let shown = QuestionDetector.answer(from: raw)
             print("PROBE-RESULT \(shown == nil ? "PASS — NO_ANSWER/uncited, nothing shown" : "PASS — cited answer shown")")

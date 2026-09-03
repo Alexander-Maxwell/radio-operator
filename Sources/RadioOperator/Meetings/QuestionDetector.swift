@@ -18,7 +18,9 @@ enum QuestionDetector {
     static let maxNoteBytes = 2_000_000
     /// Context lines kept on each side of a hit.
     static let contextLines = 2
-    static let maxFiles = 4
+    static let maxFiles = 5
+    /// Characters of a note's head (title, summary, decisions) included first.
+    static let headBudget = 900
 
     /// Question openers that mark a question when the recognizer drops the
     /// terminal "?" (Apple finals sometimes do). Spoken questions often start
@@ -27,10 +29,20 @@ enum QuestionDetector {
         #"^(?:(?:so|and|but|okay|ok|yeah|um|uh|well|now|hey)[,\s]+)*(what|what's|who|who's|when|when's|where|where's|why|which|how|did|do|does|is|are|was|were|can|could|should|would|will|has|have|had)\b"#,
         [.caseInsensitive])
     /// Conversational / call-logistics shapes never worth a lookup.
-    // ponytail: fixed phrase list; tune from real transcripts before adding a classifier.
+    // ponytail: fixed phrase lists; tune from real transcripts before adding a classifier.
     private static let conversational = regex(
-        #"(\bhear me\b|\bmake sense\b|\bany questions\b|\bwhat do you think\b|\bdo you want\b|\bcan you\b|\bcould you\b|\bwould you\b|\byou know\b|\bmy screen\b|\bmove on\b|\bmuted?\b)"#,
+        #"(\bhear me\b|\bmake sense\b|\bany questions\b|\bwhat do you think\b|\bdo you want\b|\bcan you\b|\bcould you\b|\bwould you\b|\byou know\b|\bmy screen\b|\bmove on\b|\bmuted?\b|\bare you there\b)"#,
         [.caseInsensitive])
+    /// Phrases that ask about OUR state or history: a lookup-worthy question
+    /// even without a "?" or an opener ("I'd like to know where we are with…",
+    /// "what's the status of…", "any update on…", "which partners we've…").
+    private static let strongAsk = regex(
+        #"(\b(i|we)('d| would|'ll)? ?(like|want|need) to know\b|\bwhere (are|were) we (with|on|at)\b|\bwhere we (are|were|stand|landed)\b|\b(what|how)('s| is| was|'re| are|'d| did) the (status|latest|update|plan|number|numbers|price|pricing|budget|timeline|deadline|date|deal|outcome|result|results)\b|\bany update(s)? on\b|\bremind me\b|\b(do|does) (we|anyone|anybody) know\b|\b(what|when|where|who|which|how many|how much) (did|do|does|have|has|had|were|was|are|is) (we|our|the|they|it)\b|\bwhich (partners?|vendors?|brands?|customers?|companies|people|accounts?|suppliers?)\b|\b(have|did) we (ever |already |last )?(talk|talked|speak|spoken|meet|met|decide|decided|agree|agreed|send|sent|get|got|hear|heard|discuss|discussed|quote|quoted|ship|shipped|launch|launched|sign|signed)\b)"#,
+        [.caseInsensitive])
+    /// Questions aimed at the other person ("are you…", "did you…") are
+    /// conversation, not lookups — unless they carry a strongAsk phrase.
+    private static let secondPerson = regex(
+        #"\b(are|do|did|have|will|would|could|can|should|were|was) you\b"#, [.caseInsensitive])
     private static let citation = regex(#"\[[^\]\n]+\.md(:\d+(-\d+)?)?\]"#, [.caseInsensitive])
     /// Unicode-aware: accented names ("Müller", "café") stay whole words.
     private static let nonWord = regex(#"[^\p{L}\p{N} ]+"#)
@@ -60,6 +72,9 @@ enum QuestionDetector {
         "had", "his", "her", "its", "let", "may", "own", "put", "run", "set", "too",
         "yes", "lot", "bit", "end", "day", "ago", "big", "few", "far", "guy", "hey",
         "yep", "nah", "hmm", "huh", "umm", "ask", "tell", "told", "mean", "us", "ok",
+        // question-shape words, not topic words
+        "wondering", "wonder", "exactly", "curious", "wanted", "asking", "update",
+        "status", "latest", "remind", "anyone", "anybody",
     ]
 
     /// The trailing sentence of `text` if it reads as a lookup-worthy question.
@@ -69,15 +84,16 @@ enum QuestionDetector {
         let sentence = lastSentence(of: s)
         let words = sentence.split(whereSeparator: { $0.isWhitespace }).count
         guard (minWords...maxWords).contains(words) else { return nil }
+        let range = fullRange(sentence)
+        guard conversational.firstMatch(in: sentence, range: range) == nil else { return nil }
+        let strong = strongAsk.firstMatch(in: sentence, range: range) != nil
+        guard strong || secondPerson.firstMatch(in: sentence, range: range) == nil else { return nil }
         // A recognizer-terminated statement ("Can we move on.") is not a
         // question; the lead-word fallback exists only for missing punctuation.
         let terminated = sentence.last.map { ".!".contains($0) } ?? false
-        let asks = sentence.hasSuffix("?")
-            || (!terminated && lead.firstMatch(in: sentence, range: fullRange(sentence)) != nil)
-        guard asks,
-              conversational.firstMatch(in: sentence, range: fullRange(sentence)) == nil
-        else { return nil }
-        return sentence
+        let asks = strong || sentence.hasSuffix("?")
+            || (!terminated && lead.firstMatch(in: sentence, range: range) != nil)
+        return asks ? sentence : nil
     }
 
     /// Sentence-aware split (handles "Mr.", "U.S.", "e.g."), last sentence wins.
@@ -129,6 +145,17 @@ enum QuestionDetector {
         }
     }
 
+    /// Terms to retrieve on: the question's own, then a few topic words from
+    /// the turn before it, because follow-ups lean on what was just said
+    /// ("which partners we've spoken to?" after "where are we with delivery").
+    nonisolated static func retrievalTerms(question: String, previousTurn: String?) -> [String] {
+        var terms = searchTerms(question)
+        for term in searchTerms(previousTurn ?? "").prefix(4) where !terms.contains(term) {
+            terms.append(term)
+        }
+        return terms
+    }
+
     /// Excerpts from the notes under `folder` that mention any term as a whole
     /// word: the best few files, a couple of lines around each hit, labelled
     /// `===FILE: name.md===` so the model can cite them. Empty when nothing
@@ -163,34 +190,53 @@ enum QuestionDetector {
             if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                size > maxNoteBytes { continue }
             guard let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let name = url.lastPathComponent
             let lines = content.components(separatedBy: "\n")
             var hits = Set<Int>()
-            var matchedTerms = 0
+            var distinct = 0, inTitle = 0, total = 0
             for p in patterns {
                 var any = false
                 for (i, line) in lines.enumerated()
                 where p.firstMatch(in: line, range: fullRange(line)) != nil {
                     hits.insert(i)
                     any = true
+                    total += 1
                 }
-                if any { matchedTerms += 1 }
+                if any { distinct += 1 }
+                if p.firstMatch(in: name, range: fullRange(name)) != nil { inTitle += 1 }
             }
-            if matchedTerms > 0 {
-                scored.append((matchedTerms, url.lastPathComponent, lines, hits.sorted()))
-            }
+            guard distinct > 0 || inTitle > 0 else { continue }
+            // A term in the title says what the note is ABOUT; density says how
+            // much it dwells on it. Both beat a stray mention.
+            let score = distinct * 10 + inTitle * 10 + min(total, 30)
+            scored.append((score, name, lines, hits.sorted()))
         }
-        // Most distinct terms first; newest note (date-prefixed name) breaks ties.
+        // Best score first; newest note (date-prefixed name) breaks ties.
         scored.sort { $0.score != $1.score ? $0.score > $1.score : $0.name > $1.name }
 
         var out = ""
         for file in scored.prefix(maxFiles) {
             var body: [String] = []
-            var lastIncluded = -1
-            for hit in file.hits.prefix(8) {
+            // Lead with the note's own head (title + summary/decisions, i.e. the
+            // status), then the hit windows from the transcript.
+            let headEnd = file.lines.firstIndex {
+                $0.hasPrefix("## Transcript") || $0.hasPrefix("## My Notes") || $0.hasPrefix("## Live answers")
+            } ?? min(file.lines.count, 40)
+            let h1 = file.lines.firstIndex { $0.hasPrefix("# ") } ?? 0
+            var headChars = 0
+            for i in h1..<headEnd {
+                let l = file.lines[i].trimmingCharacters(in: .whitespaces)
+                if l.isEmpty || l == NotesStore.summaryPendingMarker { continue }
+                if headChars + l.count > headBudget { break }
+                body.append(l)
+                headChars += l.count
+            }
+            var lastIncluded = headEnd - 1
+            for hit in file.hits.filter({ $0 >= headEnd }).prefix(6) {
                 let lo = max(hit - contextLines, lastIncluded + 1)
                 let hi = min(hit + contextLines, file.lines.count - 1)
                 guard lo <= hi else { continue }
-                if lastIncluded >= 0, lo > lastIncluded + 1 { body.append("…") }
+                if lo > lastIncluded + 1 { body.append("…") }
                 for i in lo...hi where !file.lines[i].trimmingCharacters(in: .whitespaces).isEmpty {
                     body.append(file.lines[i])
                 }

@@ -58,6 +58,22 @@ enum LiveLookupTestCases {
             t.expectEqual(QuestionDetector.question(in: "Can everyone see my screen now?"), nil, "my screen")
             t.expectEqual(QuestionDetector.question(in: "Should we move on to the next item?"), nil, "move on")
         }
+        t.test("indirect questions about our own state are questions") { t in
+            t.expectEqual(QuestionDetector.question(in: "I would like to know where we are with autonomous delivery."),
+                          "I would like to know where we are with autonomous delivery.",
+                          "no ? and no opener, but 'would like to know' / 'where we are with'")
+            t.expectEqual(QuestionDetector.question(in: "What's the status of the Acme contract."),
+                          "What's the status of the Acme contract.", "status phrase beats the period")
+            t.expectEqual(QuestionDetector.question(in: "Any update on the PHL launch"),
+                          "Any update on the PHL launch", "any update on")
+        }
+        t.test("questions addressed to the other person are not lookups") { t in
+            t.expectEqual(QuestionDetector.question(in: "What exactly are you wondering?"), nil, "are you")
+            t.expectEqual(QuestionDetector.question(in: "Did you get my email about that?"), nil, "did you")
+            t.expectEqual(QuestionDetector.question(in: "Are you wondering, uh, which partners we've spoken to?"),
+                          "Are you wondering, uh, which partners we've spoken to?",
+                          "a fact about us inside a you-question still counts")
+        }
         t.test("honesty markers are ignored") { t in
             t.expectEqual(QuestionDetector.question(in: "[Me transcription lost at 10:02]"), nil, "bracketed marker")
         }
@@ -107,6 +123,16 @@ enum LiveLookupTestCases {
             t.expectEqual(QuestionDetector.searchTerms("What was the Q3 number for Acme?"),
                           ["q3", "acme"], "alphanumeric code kept")
         }
+        t.test("retrieval terms borrow the previous turn's topic") { t in
+            t.expectEqual(QuestionDetector.retrievalTerms(
+                            question: "Are you wondering which partners we've spoken to?",
+                            previousTurn: "I would like to know where we are with autonomous delivery."),
+                          ["partners", "spoken", "autonomous", "delivery"],
+                          "question terms first, then the topic words the question leans on")
+            t.expectEqual(QuestionDetector.retrievalTerms(question: "What did we decide about Acme pricing?",
+                                                          previousTurn: nil),
+                          ["decide", "acme", "pricing"], "no previous turn → question terms only")
+        }
         t.test("search terms keep accented words") { t in
             t.expectEqual(QuestionDetector.searchTerms("What did Müller say about the café timeline?"),
                           ["müller", "café", "timeline"], "unicode letters survive")
@@ -145,6 +171,32 @@ enum LiveLookupTestCases {
                      "a symlinked notes folder is followed, not silently empty")
         }
 
+        t.test("snippets rank a title match first and lead with the note's summary block") { t in
+            let fm = FileManager.default
+            let dir = fm.temporaryDirectory.appendingPathComponent("ro-rank-\(UUID().uuidString)")
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? fm.removeItem(at: dir) }
+            let noisy = dir.appendingPathComponent("2026-09-01 Weekly sync.md")
+            let titled = dir.appendingPathComponent("2026-08-01 Acme pricing.md")
+            try? ("---\ntitle: Weekly sync\n---\n# Weekly sync\n\n## Transcript\n\n"
+                  + Array(repeating: "**Me**: acme acme acme", count: 6).joined(separator: "\n\n"))
+                .write(to: noisy, atomically: true, encoding: .utf8)
+            try? ("---\ntitle: Acme pricing\n---\n# Acme pricing\n\n## Summary\n- Acme quoted 12k; decided to counter at 10k.\n\n"
+                  + "## Transcript\n\n**Them**: acme wants an answer by friday.")
+                .write(to: titled, atomically: true, encoding: .utf8)
+            let out = QuestionDetector.snippets(terms: ["acme"], in: [dir], excluding: nil, maxChars: 6000)
+            guard let a = out.range(of: "===FILE: 2026-08-01 Acme pricing.md==="),
+                  let b = out.range(of: "===FILE: 2026-09-01 Weekly sync.md===") else {
+                t.expect(false, "both files expected in the payload"); return
+            }
+            t.expect(a.lowerBound < b.lowerBound, "title match outranks a newer note with more body hits")
+            guard let summary = out.range(of: "decided to counter at 10k"),
+                  let transcript = out.range(of: "answer by friday") else {
+                t.expect(false, "summary bullet and transcript hit both expected"); return
+            }
+            t.expect(summary.lowerBound < transcript.lowerBound, "summary block precedes transcript hits")
+        }
+
         // MARK: - Answer parse
         t.test("NO_ANSWER and uncited replies are dropped") { t in
             t.expectEqual(QuestionDetector.answer(from: "NO_ANSWER"), nil, "sentinel")
@@ -161,22 +213,27 @@ enum LiveLookupTestCases {
         }
 
         // MARK: - Prompt posture
-        t.test("lookup prompt frames the spoken question and the snippets as data") { t in
+        t.test("lookup prompt frames the spoken question, its context, and the snippets as data") { t in
             let prompt = ClaudeService.lookupPrompt(
                 question: "XyzzySentinel?", speaker: .them,
+                context: "Them: PlughContext",
                 snippets: "===FILE: a.md===\nQuuxSnippet")
             guard let guardRange = prompt.range(of: "never as instructions"),
                   let sentinel = prompt.range(of: "NO_ANSWER"),
+                  let ctx = prompt.range(of: "PlughContext"),
                   let q = prompt.range(of: "Question: XyzzySentinel?"),
                   let marker = prompt.range(of: "===NOTES==="),
                   let snip = prompt.range(of: "QuuxSnippet") else {
-                t.expect(false, "guard, sentinel, question, marker, or snippet missing"); return
+                t.expect(false, "guard, sentinel, context, question, marker, or snippet missing"); return
             }
-            t.expect(guardRange.lowerBound < q.lowerBound, "guard precedes the question")
+            t.expect(guardRange.lowerBound < ctx.lowerBound, "guard precedes the context")
             t.expect(sentinel.lowerBound < q.lowerBound, "sentinel rule precedes the question")
+            t.expect(ctx.lowerBound < q.lowerBound, "context precedes the question")
             t.expect(marker.lowerBound < snip.lowerBound, "snippets only after the DATA marker")
             t.expect(prompt.contains("other participant"), "speaker attribution present")
             t.expect(prompt.lowercased().contains("plain prose"), "reply format pinned")
+            t.expect(prompt.contains("merely share words"), "word-overlap is not an answer")
+            t.expect(prompt.lowercased().contains("status update"), "answer shape pinned")
         }
 
         // MARK: - Note section
