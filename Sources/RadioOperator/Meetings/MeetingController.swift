@@ -73,6 +73,13 @@ final class MeetingController: ObservableObject {
     /// One queued question (newest wins) for when a lookup is already running,
     /// so the second of two back-to-back questions is not lost.
     private var pendingLookup: (text: String, channel: Speaker, at: Date)?
+    /// Per-channel beat after a kept final, so a question the recognizer split
+    /// across two finals is detected on the merged utterance, not a fragment.
+    private var lookupProbes: [Speaker: Task<Void, Never>] = [:]
+    /// Short-lived HUD line ("Nothing in your notes for that") so the user can
+    /// tell a question was heard even when no answer is shown.
+    @Published private(set) var lookupNotice: String?
+    private var lookupNoticeTask: Task<Void, Never>?
 
     private init() {}
 
@@ -351,8 +358,8 @@ final class MeetingController: ObservableObject {
         // Retrieval leans on the turn before the question; the prompt sees the
         // last few turns so pronouns and follow-ups resolve.
         let turns = assembler.utterances
-        let lastHoldsQuestion = turns.last?.text.contains(question) ?? false
-        let previousTurn = (lastHoldsQuestion ? turns.dropLast().last : turns.last)?.text
+        let holder = turns.lastIndex { $0.text.contains(question) } ?? turns.count
+        let previousTurn = holder > 0 ? turns[holder - 1].text : nil
         let terms = QuestionDetector.retrievalTerms(question: question, previousTurn: previousTurn)
         let context = turns.suffix(4)
             .map { "\($0.speaker.rawValue): \(String($0.text.suffix(220)))" }
@@ -383,8 +390,10 @@ final class MeetingController: ObservableObject {
                 QuestionDetector.snippets(terms: terms, in: corpus, excluding: liveNote,
                                           maxChars: 7000)
             }.value
-            guard !snippets.isEmpty, !Task.isCancelled, let self, self.active else {
+            guard !Task.isCancelled, let self, self.active else { return }
+            guard !snippets.isEmpty else {
                 NSLog("RadioOperator live lookup skipped — no local match (\(qLen) chars, \(terms.count) terms)")
+                self.showLookupNotice("Heard a question — nothing in your notes for that")
                 return
             }
             // The cap counts real spawns, not detections.
@@ -398,10 +407,14 @@ final class MeetingController: ObservableObject {
                 let label = (error as? ClaudeService.ClaudeError)?.logLabel
                     ?? (error is CancellationError ? "cancelled" : String(describing: type(of: error)))
                 NSLog("RadioOperator live lookup failed — \(label)")
+                if !Task.isCancelled { self.showLookupNotice("Lookup failed — check Claude in Settings") }
                 return
             }
-            guard !Task.isCancelled, self.active,
-                  let answer = QuestionDetector.answer(from: raw) else { return }
+            guard !Task.isCancelled, self.active else { return }
+            guard let answer = QuestionDetector.answer(from: raw) else {
+                self.showLookupNotice("Heard a question — nothing in your notes for that")
+                return
+            }
             let who = channel == .me ? "You" : "They"
             let flat = QuestionDetector.oneLine(answer)
             let line = "❓ \(elapsed) \(who) asked: \(question)\n→ \(flat.prefix(600))"
@@ -419,6 +432,10 @@ final class MeetingController: ObservableObject {
         lookupTask = nil
         lookupInFlight = false
         pendingLookup = nil
+        lookupProbes.values.forEach { $0.cancel() }
+        lookupProbes = [:]
+        lookupNoticeTask?.cancel()
+        lookupNotice = nil
     }
 
     // MARK: - Live ingestion
@@ -437,7 +454,32 @@ final class MeetingController: ObservableObject {
             schedulePersist()
             // Only finals that made the transcript: a mic echo of the far side
             // must not be looked up as "You asked".
-            if kept { maybeLookup(text: text, channel: event.channel) }
+            if kept { scheduleLookupProbe(channel: event.channel) }
+        }
+    }
+
+    /// Waits a beat after a kept final (the assembler merges same-speaker finals
+    /// up to 2 s apart), then runs the detector on that channel's merged last
+    /// utterance. A newer final on the channel re-arms the beat.
+    private func scheduleLookupProbe(channel: Speaker) {
+        guard SettingsStore.shared.data.liveLookup else { return }
+        lookupProbes[channel]?.cancel()
+        lookupProbes[channel] = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, let self, self.active,
+                  let text = self.assembler.utterances.last(where: { $0.speaker == channel })?.text
+            else { return }
+            self.maybeLookup(text: text, channel: channel)
+        }
+    }
+
+    private func showLookupNotice(_ text: String) {
+        lookupNotice = text
+        lookupNoticeTask?.cancel()
+        lookupNoticeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.lookupNotice = nil
         }
     }
 

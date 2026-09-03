@@ -288,12 +288,14 @@ struct RecordingHUDView: View {
             // leaves this Mac" while a live lookup is on or in flight. Same
             // single line, same font, so the fixed panel height holds.
             HStack(spacing: 7) {
-                GlowDot(color: controller.lookupInFlight ? Theme.amber : Theme.green, size: 6)
+                GlowDot(color: controller.lookupInFlight || controller.lookupNotice != nil
+                            ? Theme.amber : Theme.green, size: 6)
                 Text(controller.lookupInFlight
                      ? "Looking that up in your notes with Claude…"
-                     : SettingsStore.shared.data.liveLookup
-                        ? "Transcribing on-device — questions go to Claude"
-                        : "Nothing leaves this Mac — transcribing on-device")
+                     : controller.lookupNotice
+                        ?? (SettingsStore.shared.data.liveLookup
+                            ? "Transcribing on-device — questions go to Claude"
+                            : "Nothing leaves this Mac — transcribing on-device"))
                     .font(Theme.display(11))
                     .foregroundStyle(Theme.textMeta)
                     .lineLimit(1)
